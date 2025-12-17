@@ -1,0 +1,86 @@
+import { useEffect, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import { supabase } from './lib/supabaseClient'
+import type { Usuario } from './types'
+import { styles } from './styles'
+import { LoginScreen } from './components/LoginScreen'
+import { MainShell } from './components/MainShell'
+
+function App() {
+  const [session, setSession] = useState<Session | null>(null)
+  const [perfil, setPerfil] = useState<Usuario | null>(null)
+  const [loadingApp, setLoadingApp] = useState(true)
+
+  useEffect(() => {
+    const run = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      setSession(session ?? null)
+
+      if (session?.user?.id) {
+        await carregarPerfil(session.user.id)
+      }
+
+      setLoadingApp(false)
+    }
+
+    run()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, sess) => {
+      setSession(sess)
+      if (sess?.user?.id) {
+        carregarPerfil(sess.user.id)
+      } else {
+        setPerfil(null)
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  const carregarPerfil = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (!error && data) {
+      setPerfil(data as Usuario)
+    }
+  }
+
+  if (loadingApp) {
+    return (
+      <div style={styles.fullScreen}>
+        <div style={styles.card}>
+          <h1 style={styles.logoTitle}>Rotina Empresarial EQF V13</h1>
+          <p style={{ color: '#ccc', marginTop: 16 }}>Carregando...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return <LoginScreen />
+  }
+
+  return (
+    <MainShell
+      session={session}
+      perfil={perfil}
+      onLogout={async () => {
+        await supabase.auth.signOut()
+        setSession(null)
+        setPerfil(null)
+      }}
+    />
+  )
+}
+
+export default App
