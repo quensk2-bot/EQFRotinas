@@ -1,0 +1,33 @@
+name: Motor Ruptura
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "ID do job no Supabase (ruptura.jobs_ruptura)"
+        required: true
+        type: string
+
+jobs:
+  run-motor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Run motor
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          DRIVE_FILE_ID: ${{ secrets.DRIVE_FILE_ID }} # ou pegue do banco pela rotina
+          RUPTURA_JOB_ID: ${{ inputs.job_id }}
+        run: node src/ruptura/importRuptura.ts
