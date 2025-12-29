@@ -10,6 +10,8 @@ type ModoAgenda = "dia" | "7dias";
 type Props = {
   perfil: Usuario;
   filtroInicial?: FiltroAgenda;
+  // Se false, nÇœo auto-scrolla atÇ¸ a hora atual ao carregar (evita pular a pÇágina quando embutido em dashboards).
+  autoScrollToHour?: boolean;
   onAbrirExecucao: (rotina: any) => void;
 };
 
@@ -50,7 +52,8 @@ type ItemAgenda = {
 type RegionalOption = { id: number; nome: string };
 type UsuarioOption = { id: string; nome: string };
 
-const horasDia = Array.from({ length: 24 }, (_, h) => h);
+// Agenda vista: começa 06:00 e termina 00:00 (meia-noite no fim da lista)
+const horasDia = [...Array.from({ length: 18 }, (_, i) => i + 6), 0];
 
 // 🔧 Nome da sua tabela de usuários (no seu SQL: public.usuarios)
 const USUARIOS_TABLE = "usuarios";
@@ -106,6 +109,7 @@ function nowHM() {
 function buildAgendaDoDia(rotinasBase: Rotina[], dateISO: string) {
   const domAlvo = dayOfMonth(dateISO);
   const dow = weekday_1_7(dateISO);
+  const dowNum = Number(dow); // 1=domingo, 7=sábado
 
   return rotinasBase.filter((r) => {
     if (r.tipo === "avulsa") return r.data_inicio === dateISO;
@@ -113,7 +117,11 @@ function buildAgendaDoDia(rotinasBase: Rotina[], dateISO: string) {
     const p = (r.periodicidade ?? "").toLowerCase();
     if (!r.data_inicio) return false;
 
-    if (p === "diaria") return r.data_inicio <= dateISO;
+    if (p === "diaria") {
+      // não exibe diária em sábado/domingo
+      if (dowNum === 1 || dowNum === 7) return false;
+      return r.data_inicio <= dateISO;
+    }
 
     if (p === "semanal") {
       return r.data_inicio <= dateISO && String(r.dia_semana ?? "") === dow;
@@ -127,7 +135,7 @@ function buildAgendaDoDia(rotinasBase: Rotina[], dateISO: string) {
     return r.data_inicio === dateISO;
   });
 }
-export function AgendaHoje({ perfil, filtroInicial, onAbrirExecucao }: Props) {
+export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onAbrirExecucao }: Props) {
   const [dataRef, setDataRef] = useState(() => todayLocalYMD());
   const [modo, setModo] = useState<ModoAgenda>("dia");
 
@@ -153,6 +161,7 @@ export function AgendaHoje({ perfil, filtroInicial, onAbrirExecucao }: Props) {
 
   // ✅ mapa id->nome p/ exibir no card
   const [usuarioNomeMap, setUsuarioNomeMap] = useState<Record<string, string>>({});
+  const [usuarioNivelMap, setUsuarioNivelMap] = useState<Record<string, string>>({});
 
   const podeFiltrarRegional = perfil.nivel === "N1"; // ✅ N2 escondido
   const podeFiltrarUsuario = perfil.nivel === "N1" || perfil.nivel === "N2";
@@ -160,7 +169,7 @@ export function AgendaHoje({ perfil, filtroInicial, onAbrirExecucao }: Props) {
   // ✅ refs para auto-scroll na hora atual
   const hourRowRefs = useMemo(() => {
     const m = new Map<number, React.RefObject<HTMLDivElement>>();
-    for (let h = 0; h < 24; h++) m.set(h, React.createRef<HTMLDivElement>());
+    for (const h of horasDia) m.set(h, React.createRef<HTMLDivElement>());
     return m;
   }, []);
 
@@ -227,8 +236,13 @@ export function AgendaHoje({ perfil, filtroInicial, onAbrirExecucao }: Props) {
           setUsuarios(list);
 
           const map: Record<string, string> = {};
-          for (const u of data as any[]) map[String(u.id)] = String(u.nome);
+          const mapNivel: Record<string, string> = {};
+          for (const u of data as any[]) {
+            map[String(u.id)] = String(u.nome);
+            mapNivel[String(u.id)] = String(u.nivel ?? "");
+          }
           setUsuarioNomeMap((prev) => ({ ...prev, ...map }));
+          setUsuarioNivelMap((prev) => ({ ...prev, ...mapNivel }));
 
           // se usuário filtrado não está na lista (troca regional), reseta
           if (filtroUsuario !== "todos" && !list.some((x) => x.id === filtroUsuario)) setFiltroUsuario("todos");
@@ -310,16 +324,44 @@ export function AgendaHoje({ perfil, filtroInicial, onAbrirExecucao }: Props) {
 
       let rotinas = (data as Rotina[]) ?? [];
 
+      // visibilidade por hierarquia:
+      // N3: só vê ele mesmo
+      // N2: vê ele mesmo + N3
+      // N1: vê N1/N2/N3 (filtragem adicional já ocorre pelos selects/filtros)
+      if (perfil.nivel === "N3") {
+        rotinas = rotinas.filter((r) => r.responsavel_id === perfil.id);
+      } else if (perfil.nivel === "N2") {
+        rotinas = rotinas.filter(
+          (r) => r.responsavel_id === perfil.id || usuarioNivelMap[r.responsavel_id] === "N3"
+        );
+      }
+
+      // N2 não enxerga rotinas cujo responsável é N1
+      if (perfil.nivel === "N2") {
+        rotinas = rotinas.filter((r) => usuarioNivelMap[r.responsavel_id] !== "N1");
+      }
+
+      // filtro: não exibir diárias em sábado/domingo no dia selecionado
+      const dowNum = Number(weekday_1_7(dataRef)); // 1=domingo, 7=sábado
+      if (dowNum === 1 || dowNum === 7) {
+        rotinas = rotinas.filter((r) => (r.periodicidade ?? "").toLowerCase() !== "diaria");
+      }
+
       // ✅ garantir nomes dos responsáveis (para o card)
       try {
         const ids = Array.from(new Set(rotinas.map((r) => r.responsavel_id).filter(Boolean)));
         const faltantes = ids.filter((id) => !usuarioNomeMap[id]);
         if (faltantes.length) {
-          const { data: uData } = await supabase.from(USUARIOS_TABLE).select("id,nome").in("id", faltantes as any);
+          const { data: uData } = await supabase.from(USUARIOS_TABLE).select("id,nome,nivel").in("id", faltantes as any);
           if (uData) {
             const add: Record<string, string> = {};
-            for (const u of uData as any[]) add[String(u.id)] = String(u.nome);
+            const addNivel: Record<string, string> = {};
+            for (const u of uData as any[]) {
+              add[String(u.id)] = String(u.nome);
+              addNivel[String(u.id)] = String(u.nivel ?? "");
+            }
             setUsuarioNomeMap((prev) => ({ ...prev, ...add }));
+            setUsuarioNivelMap((prev) => ({ ...prev, ...addNivel }));
           }
         }
       } catch {
@@ -462,6 +504,7 @@ export function AgendaHoje({ perfil, filtroInicial, onAbrirExecucao }: Props) {
 
   // ✅ auto-scroll depois do carregamento (abrir já na hora atual)
   useEffect(() => {
+    if (!autoScrollToHour) return;
     if (modo !== "dia") return;
     if (dataRef !== todayLocalYMD()) return;
     if (loading) return;
@@ -469,7 +512,7 @@ export function AgendaHoje({ perfil, filtroInicial, onAbrirExecucao }: Props) {
     const t = setTimeout(() => scrollToCurrentHour("auto"), 80);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modo, dataRef, loading]);
+  }, [modo, dataRef, loading, autoScrollToHour]);
 
   const itensPorHora = useMemo(() => {
     const mapa = new Map<number, ItemAgenda[]>();
@@ -817,16 +860,25 @@ export function AgendaHoje({ perfil, filtroInicial, onAbrirExecucao }: Props) {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: 8 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "80px 1fr",
+              gap: 8,
+              maxHeight: "70vh",
+              overflowY: "auto",
+              paddingRight: 6,
+            }}
+          >
             {/* coluna horas */}
             <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 11, color: "#9ca3af" }}>
-              {horasDia.map((h) => {
+              {horasDia.map((h, idx) => {
                 const isHoje = dataRef === todayLocalYMD();
                 const isHoraAtual = isHoje && nowHM().hour === h;
 
                 return (
                   <div
-                    key={h}
+                    key={`${h}-${idx}`}
                     style={{
                       height: 64,
                       display: "flex",
@@ -850,22 +902,23 @@ export function AgendaHoje({ perfil, filtroInicial, onAbrirExecucao }: Props) {
                 background: "rgba(15,23,42,0.95)",
               }}
             >
-              {horasDia.map((h) => {
+              {horasDia.map((h, idx) => {
                 const isHoje = dataRef === todayLocalYMD();
                 const isHoraAtual = isHoje && nowHM().hour === h;
+                const isLastRow = idx === horasDia.length - 1;
 
                 const lista = (itensPorHora.get(h) ?? []).slice();
                 lista.sort((a, b) => (a.rotina.horario_inicio ?? "23:59").localeCompare(b.rotina.horario_inicio ?? "23:59"));
 
                 return (
                   <div
-                    key={h}
+                    key={`${h}-${idx}`}
                     ref={hourRowRefs.get(h)}
                     style={{
                       position: "relative",
                       height: 64,
-                      borderBottom: h < 23 ? "1px dashed rgba(31,41,55,0.8)" : "none",
-                      marginBottom: 10,
+                      borderBottom: !isLastRow ? "1px dashed rgba(31,41,55,0.8)" : "none",
+                      marginBottom: !isLastRow ? 10 : 0,
                       borderRadius: 10,
                       overflow: "hidden",
                       background: isHoraAtual ? "rgba(248,113,113,0.06)" : "transparent",

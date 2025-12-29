@@ -1,8 +1,7 @@
 // src/components/N1CreateRotina.tsx
-
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { styles } from "../styles";
+import { styles, theme } from "../styles";
 import type { Usuario } from "../types";
 
 type Props = {
@@ -10,7 +9,7 @@ type Props = {
 };
 
 type Urgencia = "alta" | "media" | "baixa";
-type Periodicidade = "diaria" | "semanal" | "mensal";
+type Periodicidade = "diaria" | "semanal" | "quinzenal" | "mensal";
 type TipoRotina = "normal" | "avulsa";
 
 type UsuarioOption = {
@@ -36,18 +35,46 @@ type RotinaPadraoOption = {
   tem_anexo: boolean | null;
   departamento_id: number | null;
   setor_id: number | null;
+  grupo_id: number | null;
 };
+
+type GrupoOption = {
+  id: number;
+  nome: string;
+  departamento_id: number;
+  setor_id: number;
+  regional_id: number;
+  ativo: boolean;
+};
+
+function toYMDLocal(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 function todayISO() {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
+  return toYMDLocal(d);
 }
 
 function addDaysISO(baseISO: string, days: number) {
   const d = new Date(baseISO + "T00:00:00");
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return toYMDLocal(d);
+}
+
+function toISODate(value: string | null | undefined) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  const m = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    const [_, dd, mm, yyyy] = m;
+    return `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
+  }
+  return trimmed;
 }
 
 function normalizePeriodicidade(p: any): Periodicidade {
@@ -56,45 +83,68 @@ function normalizePeriodicidade(p: any): Periodicidade {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
+  if (v.includes("quinz")) return "quinzenal";
   if (v === "semanal") return "semanal";
   if (v === "mensal") return "mensal";
   return "diaria";
 }
 
+function normalizeDiaSemana(d: any): "" | "2" | "3" | "4" | "5" | "6" | "7" {
+  const v = String(d ?? "").trim();
+  if (["2", "3", "4", "5", "6", "7"].includes(v)) return v as any;
+  return "";
+}
+
+function nextDateForWeekday(baseISO: string, dia: "2" | "3" | "4" | "5" | "6" | "7"): string {
+  // dia: "2"=segunda, "3"=terça, "4"=quarta, "5"=quinta, "6"=sexta, "7"=sábado
+  const base = new Date(baseISO + "T00:00:00");
+  // mapeia para JS getDay() (0=dom,1=seg,...,6=sáb)
+  const alvoJs = { "2": 1, "3": 2, "4": 3, "5": 4, "6": 5, "7": 6 }[dia];
+  const baseJs = base.getDay(); // 0..6
+  const diff = (alvoJs - baseJs + 7) % 7;
+  const add = diff; // permite agendar no próprio dia, se coincidir
+  const d = new Date(base);
+  d.setDate(d.getDate() + add);
+  return toYMDLocal(d);
+}
+
 export function N1CreateRotina({ perfil }: Props) {
-  // ====== campos “editáveis” (mesmo com modelo) ======
+  // campos editáveis
   const [duracaoMinutos, setDuracaoMinutos] = useState("30"); // default 30
   const [dataInicio, setDataInicio] = useState("");
   const [horarioInicio, setHorarioInicio] = useState("08:00");
   const [usuarios, setUsuarios] = useState<UsuarioOption[]>([]);
   const [responsavelId, setResponsavelId] = useState<string>("");
 
-  // ====== campos “do modelo” (ou manual quando sem modelo) ======
+  // campos do modelo
   const [titulo, setTitulo] = useState("");
   const [descricao, setDescricao] = useState("");
   const [urgencia, setUrgencia] = useState<Urgencia>("alta");
   const [tipoRotina, setTipoRotina] = useState<TipoRotina>("normal");
   const [periodicidade, setPeriodicidade] = useState<Periodicidade>("diaria");
-
-  // ✅ Dia da semana SEMPRE destravado (sempre editável)
-  const [diaSemana, setDiaSemana] = useState<"2" | "3" | "4" | "5" | "6" | "7" | "">("2");
-
+  const [diasSemana, setDiasSemana] = useState<string[]>(["2"]);
+  // compat: seletor legado de dia único
+  const setDiaSemana = (v: string) => setDiasSemana(v ? [v] : []);
   const [temChecklist, setTemChecklist] = useState(false);
   const [temAnexo, setTemAnexo] = useState(false);
 
-  // ====== UI status ======
+  // grupos
+  const [grupos, setGrupos] = useState<GrupoOption[]>([]);
+  const [grupoId, setGrupoId] = useState<string>("");
+  const [gruposErro, setGruposErro] = useState<string | null>(null);
+
+  // UI status
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [details, setDetails] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [avisoScope, setAvisoScope] = useState<string | null>(null);
 
-  // ====== modelos ======
+  // modelos
   const [rotinasPadrao, setRotinasPadrao] = useState<RotinaPadraoOption[]>([]);
   const [rotinaPadraoId, setRotinaPadraoId] = useState<string>("");
   const [loadingPadrao, setLoadingPadrao] = useState(false);
   const [erroPadrao, setErroPadrao] = useState<string | null>(null);
 
-  // --------- derived: responsável ----------
   const isSelf = useMemo(() => {
     if (!perfil?.id) return false;
     return String(responsavelId) === String(perfil.id);
@@ -102,7 +152,6 @@ export function N1CreateRotina({ perfil }: Props) {
 
   const responsavelSelecionado = useMemo(() => {
     if (!responsavelId) return null;
-
     if (isSelf && perfil) {
       return {
         id: perfil.id,
@@ -114,29 +163,24 @@ export function N1CreateRotina({ perfil }: Props) {
         regional_id: perfil.regional_id ?? null,
       } as UsuarioOption;
     }
-
     return usuarios.find((u) => String(u.id) === String(responsavelId)) ?? null;
   }, [usuarios, responsavelId, isSelf, perfil]);
 
   const responsavelLabel = useMemo(() => {
     if (!perfil) return "(não selecionado)";
-    if (isSelf) return `${perfil.nome ?? "EU"} (EU — N1)`;
+    if (isSelf) return `${perfil.nome ?? "EU"} (EU - N1)`;
     if (responsavelSelecionado) return `${responsavelSelecionado.nome} (${responsavelSelecionado.nivel})`;
     return "(não selecionado)";
   }, [perfil, isSelf, responsavelSelecionado]);
 
-  // --------- derived: modelo ----------
   const modeloSelecionado = useMemo(() => {
     if (!rotinaPadraoId) return null;
     return rotinasPadrao.find((r) => r.id === rotinaPadraoId) ?? null;
   }, [rotinasPadrao, rotinaPadraoId]);
 
   const usandoModelo = !!modeloSelecionado;
-
-  // ✅ trava qualquer edição de “campo do modelo”
   const lockModeloFields = usandoModelo;
 
-  // flags efetivas (sempre do modelo quando usandoModelo)
   const flagsEfetivas = useMemo(() => {
     if (usandoModelo) {
       return {
@@ -147,42 +191,35 @@ export function N1CreateRotina({ perfil }: Props) {
     return { temChecklist, temAnexo };
   }, [usandoModelo, modeloSelecionado, temChecklist, temAnexo]);
 
-  // --------- effects ----------
   useEffect(() => {
     if (!perfil?.id) return;
     void carregarUsuarios();
     void carregarRotinasPadrao();
+    void carregarGrupos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [perfil?.id, perfil?.setor_id, perfil?.departamento_id]);
+  }, [perfil?.id, perfil?.setor_id, perfil?.departamento_id, perfil?.regional_id]);
 
   const carregarUsuarios = async () => {
     if (!perfil) return;
     setAvisoScope(null);
-
     try {
       const { data, error } = await supabase.rpc("eqf_responsaveis_rotina_n1", {
         p_usuario_id: perfil.id,
       });
-
       if (error) {
-        console.error("Erro ao buscar responsáveis (RPC):", error);
         setAvisoScope("Erro ao carregar responsáveis.");
         setUsuarios([]);
         return;
       }
-
       const lista = (data || []) as UsuarioOption[];
       if (!lista.length) setAvisoScope("Nenhum usuário N2/N3 encontrado para o seu setor/departamento.");
-
       setUsuarios(lista);
-
       setResponsavelId((prev) => {
         if (perfil?.id && String(prev) === String(perfil.id)) return prev;
         if (prev && lista.some((u) => String(u.id) === String(prev))) return prev;
         return lista[0]?.id ?? "";
       });
     } catch (e) {
-      console.error("Erro inesperado ao carregar responsáveis:", e);
       setAvisoScope("Erro inesperado ao carregar responsáveis.");
       setUsuarios([]);
     }
@@ -190,10 +227,8 @@ export function N1CreateRotina({ perfil }: Props) {
 
   const carregarRotinasPadrao = async () => {
     if (!perfil) return;
-
     setLoadingPadrao(true);
     setErroPadrao(null);
-
     try {
       let q = supabase.from("rotinas_padrao").select(`
           id,
@@ -207,24 +242,22 @@ export function N1CreateRotina({ perfil }: Props) {
           tem_checklist,
           tem_anexo,
           departamento_id,
-          setor_id
+          setor_id,
+          grupo_id
         `);
 
       if (perfil.departamento_id != null) q = q.eq("departamento_id", perfil.departamento_id);
       if (perfil.setor_id != null) q = q.eq("setor_id", perfil.setor_id);
+      if (perfil.regional_id != null) q = q.eq("regional_id", perfil.regional_id);
 
       const { data, error } = await q.order("titulo", { ascending: true });
-
       if (error) {
-        console.error("Erro ao carregar rotinas padrão:", error);
         setErroPadrao("Erro ao carregar modelos de rotina.");
         setRotinasPadrao([]);
         return;
       }
-
       setRotinasPadrao((data || []) as RotinaPadraoOption[]);
-    } catch (e) {
-      console.error("Erro inesperado rotinas padrão:", e);
+    } catch {
       setErroPadrao("Erro inesperado ao carregar modelos.");
       setRotinasPadrao([]);
     } finally {
@@ -232,78 +265,90 @@ export function N1CreateRotina({ perfil }: Props) {
     }
   };
 
-  // --------- handlers ----------
-  const handleChangeRotinaPadrao = (id: string) => {
-    setRotinaPadraoId(id);
-
-    const modelo = rotinasPadrao.find((r) => r.id === id);
-    if (!modelo) {
-      // voltou para “sem modelo”
-      setStatusMsg(null);
-      setDetails(null);
+  const carregarGrupos = async () => {
+    if (!perfil?.departamento_id || !perfil?.setor_id) {
+      setGrupos([]);
+      setGrupoId("");
+      setGruposErro("Usuário N1 sem departamento/setor definido.");
       return;
     }
+    try {
+      let q = supabase
+        .from("grupos")
+        .select("id, nome, departamento_id, setor_id, regional_id, ativo")
+        .eq("departamento_id", perfil.departamento_id)
+        .eq("setor_id", perfil.setor_id);
 
-    // Carrega os dados do modelo para exibir (travado na UI)
-    setTitulo(modelo.titulo ?? "");
-    setDescricao(modelo.descricao ?? "");
+      if (perfil.regional_id != null) q = q.eq("regional_id", perfil.regional_id);
 
-    setDuracaoMinutos(modelo.sugestao_duracao_minutos != null ? String(modelo.sugestao_duracao_minutos) : "30");
-
-    if (modelo.urgencia) setUrgencia(modelo.urgencia);
-
-    const tipo = (modelo.tipo ?? "normal") as TipoRotina;
-    setTipoRotina(tipo);
-
-    const periodicidadeModelo: Periodicidade =
-      tipo === "avulsa" ? "diaria" : normalizePeriodicidade(modelo.periodicidade ?? "diaria");
-    setPeriodicidade(periodicidadeModelo);
-
-    // ✅ carrega dia_semana do modelo, mas continua editável (destravado)
-    if (modelo.dia_semana) setDiaSemana(modelo.dia_semana as any);
-
-    setTemChecklist(!!modelo.tem_checklist);
-    setTemAnexo(!!modelo.tem_anexo);
-
-    setStatusMsg("✅ Modelo aplicado: campos do modelo travados. Você ajusta responsável/data/horário/duração e dia da semana.");
-    setDetails(null);
+      const { data, error } = await q.order("nome", { ascending: true });
+      if (error) {
+        setGruposErro("Erro ao carregar grupos.");
+        setGrupos([]);
+        setGrupoId("");
+        return;
+      }
+      const ativos = (data ?? []).filter((g: any) => g.ativo !== false) as GrupoOption[];
+      setGrupos(ativos);
+      setGrupoId((prev) => {
+        if (prev && ativos.some((g) => String(g.id) === String(prev))) return prev;
+        return ativos[0] ? String(ativos[0].id) : "";
+      });
+      setGruposErro(ativos.length ? null : "Nenhum grupo ativo encontrado.");
+    } catch {
+      setGruposErro("Erro inesperado ao carregar grupos.");
+      setGrupos([]);
+      setGrupoId("");
+    }
   };
 
-  const handleCriarParaMim = () => {
-    if (!perfil?.id) return;
-    setResponsavelId(perfil.id);
-    setStatusMsg("✅ Responsável definido como: EU (N1)");
-    setDetails(null);
+  const handleChangeRotinaPadrao = (id: string) => {
+    setRotinaPadraoId(id);
+    if (!id) return;
+    const m = rotinasPadrao.find((r) => r.id === id);
+    if (!m) return;
+    setTitulo(m.titulo || "");
+    setDescricao(m.descricao || "");
+    if (m.urgencia) setUrgencia(m.urgencia);
+    if (m.tipo) setTipoRotina(m.tipo);
+    if (m.periodicidade) setPeriodicidade(m.periodicidade);
+    if (m.dia_semana) {
+      const ds = normalizeDiaSemana(m.dia_semana);
+      setDiasSemana(ds ? [ds] : []);
+    }
+    if (m.grupo_id != null && String(m.grupo_id) !== grupoId) setGrupoId(String(m.grupo_id));
+    setTemChecklist(!!m.tem_checklist);
+    setTemAnexo(!!m.tem_anexo);
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-
     if (!perfil) {
-      setStatusMsg("❌ Perfil não carregado. Faça login novamente.");
+      setStatusMsg("Perfil não carregado. Faça login novamente.");
       return;
     }
     if (!responsavelId) {
-      setStatusMsg("❌ Selecione um responsável (N2/N3) ou clique em Criar para mim (N1).");
+      setStatusMsg("Selecione um responsável (N2/N3) ou clique em Criar para mim (N1).");
+      return;
+    }
+    if (!grupoId) {
+      setStatusMsg("Selecione o grupo para classificar a rotina.");
       return;
     }
 
     setLoading(true);
-    setStatusMsg("⏳ Validando conflito diária...");
+    setStatusMsg("Validando conflito diária...");
     setDetails(null);
 
     try {
       const minutos = Number(duracaoMinutos);
       const minutosEfetivos = Number.isFinite(minutos) && minutos > 0 ? minutos : 30;
 
-      // se tiver modelo, força tudo do modelo (exceto os editáveis)
       const tituloEfetivo = usandoModelo ? (modeloSelecionado?.titulo ?? "") : titulo;
       const descricaoEfetiva = usandoModelo ? (modeloSelecionado?.descricao ?? "") : descricao;
 
       const urgenciaEfetiva: Urgencia = usandoModelo ? ((modeloSelecionado?.urgencia ?? "alta") as Urgencia) : urgencia;
-
       const tipoEfetivo: TipoRotina = usandoModelo ? ((modeloSelecionado?.tipo ?? "normal") as TipoRotina) : tipoRotina;
-
       const periodicidadeEfetiva: Periodicidade =
         tipoEfetivo === "avulsa"
           ? "diaria"
@@ -311,11 +356,23 @@ export function N1CreateRotina({ perfil }: Props) {
             ? normalizePeriodicidade(modeloSelecionado?.periodicidade ?? "diaria")
             : periodicidade;
 
-      // ✅ dia_semana sempre vem do select (destravado), mas só envia se semanal
-      const diaSemanaEfetivo = periodicidadeEfetiva === "semanal" ? diaSemana : null;
+      const baseDias =
+        periodicidadeEfetiva === "semanal" || periodicidadeEfetiva === "quinzenal"
+          ? usandoModelo && modeloSelecionado?.dia_semana
+            ? [normalizeDiaSemana(modeloSelecionado.dia_semana)].filter(Boolean) as string[]
+            : diasSemana
+          : [];
 
-      // conflito só para rotina normal + diária
-      const precisaChecarConflito = tipoEfetivo === "normal" && periodicidadeEfetiva === "diaria";
+      if ((periodicidadeEfetiva === "semanal" || periodicidadeEfetiva === "quinzenal") && baseDias.length === 0) {
+        setStatusMsg("Escolha pelo menos um dia da semana.");
+        setLoading(false);
+        return;
+      }
+
+      const periodicidadeParaEdge: Periodicidade =
+        periodicidadeEfetiva === "quinzenal" ? "semanal" : periodicidadeEfetiva;
+
+      const precisaChecarConflito = tipoEfetivo === "normal" && periodicidadeParaEdge === "diaria";
 
       if (precisaChecarConflito) {
         const { data: temConflito, error: errRpc } = await supabase.rpc("check_conflito_diaria", {
@@ -323,70 +380,111 @@ export function N1CreateRotina({ perfil }: Props) {
           p_horario: horarioInicio,
           p_duracao_min: minutosEfetivos,
         });
-
         if (errRpc) throw errRpc;
         if (temConflito) {
-          setStatusMsg("❌ Já existe rotina diária nesse horário para esse usuário.");
+          setStatusMsg("Já existe rotina diária nesse horário para esse usuário.");
           setLoading(false);
           return;
         }
       }
 
-      setStatusMsg("⏳ Enviando rotina para o Supabase...");
-
+      setStatusMsg("Enviando rotina para o Supabase...");
       const regionalEfetiva = isSelf ? (perfil.regional_id ?? null) : (responsavelSelecionado?.regional_id ?? null);
 
-      const { data, error } = await supabase.functions.invoke("eqf-create-rotina-diaria", {
-        body: {
-          duracao_minutos: minutosEfetivos,
-          urgencia: urgenciaEfetiva,
-          tipo: tipoEfetivo,
-          periodicidade: periodicidadeEfetiva,
+      const diasCriar = baseDias.length ? baseDias : [null];
+      const resultados: any[] = [];
+      let baseData = toISODate(dataInicio) ?? todayISO();
 
-          titulo: tituloEfetivo,
-          descricao: descricaoEfetiva,
-
-          dia_semana: diaSemanaEfetivo,
-
-          data_inicio: dataInicio || null,
-          horario_inicio: horarioInicio || null,
-
-          tem_checklist: flagsEfetivas.temChecklist,
-          tem_anexo: flagsEfetivas.temAnexo,
-
-          responsavel_id: responsavelId,
-          criador_id: perfil.id,
-
-          departamento_id: perfil.departamento_id ?? null,
-          setor_id: perfil.setor_id ?? null,
-          regional_id: regionalEfetiva,
-
-          rotina_padrao_id: usandoModelo ? modeloSelecionado!.id : null,
-        },
-      });
-
-      if (error) {
-        setStatusMsg(`❌ Erro ao criar rotina: ${error.message}`);
-        setDetails(JSON.stringify(error, null, 2));
-        return;
+      // diária: se cair em sábado/domingo, empurra para a próxima segunda
+      if (periodicidadeEfetiva === "diaria") {
+        const dow = new Date(baseData + "T00:00:00").getDay(); // 0=dom,6=sab
+        if (dow === 0) baseData = addDaysISO(baseData, 1);
+        if (dow === 6) baseData = addDaysISO(baseData, 2);
       }
 
-      setStatusMsg("✅ Rotina criada com sucesso.");
-      setDetails(JSON.stringify(data, null, 2));
+      // mensal: mantém bloqueio para fim de semana
+      if (periodicidadeEfetiva === "mensal") {
+        const dow = new Date(baseData + "T00:00:00").getDay(); // 0=dom,6=sab
+        if (dow === 0 || dow === 6) {
+          setStatusMsg("Rotinas mensais não podem iniciar em sábado ou domingo. Escolha um dia útil.");
+          setLoading(false);
+          return;
+        }
+      }
 
-      // reset (mantém responsável escolhido)
+      for (const dia of diasCriar) {
+        // para semanal/quinzenal, usa a data base informada (ou hoje) como primeira ocorrência
+        const dataParaInserir = baseData;
+
+        const { data, error } = await supabase.functions.invoke("eqf-create-rotina-diaria", {
+          body: {
+            duracao_minutos: minutosEfetivos,
+            urgencia: urgenciaEfetiva,
+            tipo: tipoEfetivo,
+            periodicidade: periodicidadeParaEdge,
+            titulo: tituloEfetivo,
+            descricao: descricaoEfetiva,
+            dia_semana: dia,
+            data_inicio: dataParaInserir,
+            horario_inicio: horarioInicio || null,
+            tem_checklist: flagsEfetivas.temChecklist,
+            tem_anexo: flagsEfetivas.temAnexo,
+            responsavel_id: responsavelId,
+            criador_id: perfil.id,
+            departamento_id: perfil.departamento_id ?? null,
+            setor_id: perfil.setor_id ?? null,
+            regional_id: regionalEfetiva,
+            rotina_padrao_id: usandoModelo ? modeloSelecionado!.id : null,
+            grupo_id: Number(grupoId),
+          },
+        });
+
+        if (error) {
+          const msgData = (data as any)?.message ?? (data as any)?.error ?? null;
+          const diaLabel = dia ? ` (dia ${dia})` : "";
+          setStatusMsg(`Erro ao criar rotina${diaLabel}: ${msgData ?? error.message}`);
+          setDetails(
+            JSON.stringify(
+              {
+                dia_semana: dia,
+                status: (error as any)?.status ?? null,
+                message: error.message,
+                context: (error as any)?.context ?? null,
+                data,
+                raw: error,
+              },
+              null,
+              2
+            )
+          );
+          return;
+        }
+        resultados.push(data);
+      }
+
+      setStatusMsg(
+        resultados.length > 1
+          ? `Rotinas criadas com sucesso para ${resultados.length} dia(s) da semana.`
+          : "Rotina criada com sucesso."
+      );
+      setDetails(JSON.stringify(resultados, null, 2));
+
       setTitulo("");
       setDescricao("");
       setDuracaoMinutos("30");
       setUrgencia("alta");
       setTipoRotina("normal");
       setPeriodicidade("diaria");
-      setDiaSemana("2");
+      setDiasSemana(["2"]);
       setDataInicio("");
       setHorarioInicio("08:00");
       setTemChecklist(false);
       setTemAnexo(false);
       setRotinaPadraoId("");
+      setGrupoId((prev) => {
+        if (prev && grupos.some((g) => String(g.id) === String(prev))) return prev;
+        return grupos[0] ? String(grupos[0].id) : "";
+      });
 
       setResponsavelId((prev) => {
         if (perfil?.id && String(prev) === String(perfil.id)) return prev;
@@ -394,13 +492,12 @@ export function N1CreateRotina({ perfil }: Props) {
         return usuarios[0]?.id ?? "";
       });
     } catch (err) {
-      setStatusMsg(`❌ Erro inesperado: ${String(err)}`);
+      setStatusMsg(`Erro inesperado: ${String(err)}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // --------- UI helpers ----------
   const duracao = Number(duracaoMinutos) || 0;
   const [hora, minuto] = horarioInicio.split(":").map((x) => Number(x) || 0);
 
@@ -409,6 +506,11 @@ export function N1CreateRotina({ perfil }: Props) {
     if (isSelf) return String(perfil.regional_id ?? "null");
     return String(responsavelSelecionado?.regional_id ?? "null");
   }, [perfil, isSelf, responsavelSelecionado]);
+
+  const periodicidadeRender: Periodicidade = usandoModelo
+    ? normalizePeriodicidade(modeloSelecionado?.periodicidade ?? "diaria")
+    : periodicidade;
+  const diasHabilitados = ["semanal", "quinzenal"].includes(periodicidadeRender);
 
   return (
     <section
@@ -420,30 +522,112 @@ export function N1CreateRotina({ perfil }: Props) {
       }}
     >
       <h3 style={{ marginTop: 0, color: "#00ff88" }}>Bloco 6B — Criar rotina (N1)</h3>
-
       <p style={{ fontSize: 13, color: "#ccc" }}>
         Este bloco chama a função <strong>eqf-create-rotina-diaria</strong>.
       </p>
 
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
+        <button
+          type="button"
+          onClick={() => setTipoRotina("normal")}
+          style={{
+            ...styles.button,
+            padding: "8px 12px",
+            background: tipoRotina === "normal" ? theme.colors.neonGreen : "transparent",
+            color: tipoRotina === "normal" ? "#022c22" : theme.colors.neonGreen,
+            border: `1px solid ${theme.colors.neonGreen}`,
+          }}
+        >
+          Usar modelo
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setTipoRotina("avulsa");
+            setRotinaPadraoId("");
+          }}
+          style={{
+            ...styles.button,
+            padding: "8px 12px",
+            background: tipoRotina === "avulsa" ? theme.colors.neonGreen : "transparent",
+            color: tipoRotina === "avulsa" ? "#022c22" : theme.colors.neonGreen,
+            border: `1px solid ${theme.colors.neonGreen}`,
+          }}
+        >
+          Criar avulsa
+        </button>
+      </div>
+
       <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
         <div>
-          <label style={styles.label}>Rotina Padrão (opcional)</label>
-          <select value={rotinaPadraoId} onChange={(e) => handleChangeRotinaPadrao(e.target.value)} style={styles.input}>
-            <option value="">{loadingPadrao ? "Carregando modelos..." : "Selecione um modelo (opcional)"}</option>
-            {rotinasPadrao.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.titulo}
-              </option>
-            ))}
+          <label style={styles.label}>Tipo de rotina</label>
+          <select
+            value={tipoRotina}
+            onChange={(e) => {
+              const val = e.target.value as TipoRotina;
+              setTipoRotina(val);
+              if (val === "avulsa") {
+                setRotinaPadraoId("");
+              }
+            }}
+            style={styles.input}
+            disabled={lockModeloFields}
+          >
+            <option value="normal">Normal</option>
+            <option value="avulsa">Avulsa</option>
           </select>
+        </div>
 
-          {usandoModelo && (
-            <div style={{ fontSize: 11, color: "#22c55e", marginTop: 6 }}>
-              ✅ Modo modelo ativo: campos do modelo travados. Ajuste apenas responsável / data / horário / duração e dia da semana.
-            </div>
-          )}
+        <div style={{ display: "grid", gap: 8 }}>
+          <div>
+            <label style={styles.label}>Grupo (obrigatório)</label>
+            <select
+              value={grupoId}
+              onChange={(e) => {
+                const val = e.target.value;
+                setGrupoId(val);
+                const modeloAtual = rotinasPadrao.find((r) => r.id === rotinaPadraoId);
+                if (modeloAtual && modeloAtual.grupo_id != null && String(modeloAtual.grupo_id) !== val) {
+                  setRotinaPadraoId("");
+                }
+              }}
+              style={styles.input}
+              required
+            >
+              <option value="">{grupos.length ? "Selecione o grupo" : "Nenhum grupo encontrado"}</option>
+              {grupos.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.nome}
+                </option>
+              ))}
+            </select>
+            {gruposErro && <div style={{ fontSize: 11, color: "#f97316", marginTop: 4 }}>{gruposErro}</div>}
+          </div>
 
-          {erroPadrao && <div style={{ fontSize: 11, color: "#f97316", marginTop: 4 }}>{erroPadrao}</div>}
+          <div>
+            <label style={styles.label}>Rotina Padrão (opcional)</label>
+            <select
+              value={rotinaPadraoId}
+              onChange={(e) => handleChangeRotinaPadrao(e.target.value)}
+              style={styles.input}
+              disabled={tipoRotina === "avulsa"}
+            >
+              <option value="">{loadingPadrao ? "Carregando modelos..." : "Selecione um modelo (opcional)"}</option>
+              {rotinasPadrao
+                .filter((r) => r.grupo_id != null && String(r.grupo_id) === String(grupoId))
+                .map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.titulo}
+                  </option>
+                ))}
+            </select>
+            {usandoModelo && (
+              <div style={{ fontSize: 11, color: "#22c55e", marginTop: 6 }}>
+                Modo modelo ativo: campos do modelo travados. Ajuste apenas responsável / data / horário / duração e dia da semana.
+              </div>
+            )}
+            {erroPadrao && <div style={{ fontSize: 11, color: "#f97316", marginTop: 4 }}>{erroPadrao}</div>}
+          </div>
         </div>
 
         <div>
@@ -464,235 +648,214 @@ export function N1CreateRotina({ perfil }: Props) {
 
         <div>
           <label style={styles.label}>Responsável pela rotina</label>
-
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <select
               value={responsavelId}
               onChange={(e) => setResponsavelId(e.target.value)}
               style={{ ...styles.input, flex: 1, minWidth: 240 }}
-              required
             >
-              <option value="">— selecione —</option>
-
-              {perfil?.id && isSelf && <option value={perfil.id}>{perfil.nome ?? "EU"} (EU — N1)</option>}
-
               {usuarios.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.nome} ({u.nivel})
                 </option>
               ))}
             </select>
-
-            <button
-              type="button"
-              onClick={handleCriarParaMim}
-              style={{
-                ...styles.button,
-                padding: "10px 12px",
-                background: "#111827",
-                color: "#e5e7eb",
-                border: "1px solid #334155",
-                borderRadius: 10,
-                fontSize: 12,
-                whiteSpace: "nowrap",
-              }}
-              disabled={!perfil?.id}
-              title="Define o responsável como você (N1)"
-            >
+            <button type="button" onClick={() => perfil && setResponsavelId(perfil.id)} style={{ ...styles.button, padding: "8px 12px" }}>
               Criar para mim (N1)
             </button>
           </div>
-
-          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
-            N1 escolhe o responsável N2/N3 do setor/departamento — ou cria para si.
+          <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
+            {avisoScope ? avisoScope : `N1 escolhe o responsável do seu setor/departamento — atual: ${responsavelLabel}`}
           </div>
-
-          {avisoScope && <div style={{ fontSize: 11, color: "#f97316", marginTop: 4 }}>{avisoScope}</div>}
         </div>
 
-        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(4,1fr)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
             <label style={styles.label}>Duração (minutos)</label>
-            <input type="number" min={0} value={duracaoMinutos} onChange={(e) => setDuracaoMinutos(e.target.value)} style={styles.input} />
+            <input
+              type="number"
+              value={duracaoMinutos}
+              min={1}
+              onChange={(e) => setDuracaoMinutos(e.target.value)}
+              style={styles.input}
+            />
           </div>
-
           <div>
             <label style={styles.label}>Urgência</label>
-            <select value={urgencia} onChange={(e) => setUrgencia(e.target.value as Urgencia)} style={styles.input} disabled={lockModeloFields}>
+            <select value={urgencia} onChange={(e) => setUrgencia(e.target.value as Urgencia)} style={styles.input}>
               <option value="alta">Alta</option>
               <option value="media">Média</option>
               <option value="baixa">Baixa</option>
             </select>
           </div>
+        </div>
 
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
-            <label style={styles.label}>Tipo de rotina</label>
-            <select value={tipoRotina} onChange={(e) => setTipoRotina(e.target.value as TipoRotina)} style={styles.input} disabled={lockModeloFields}>
-              <option value="normal">Normal</option>
-              <option value="avulsa">Avulsa (1 dia)</option>
-            </select>
+            <label style={styles.label}>Dia da semana</label>
+            <div
+              style={{
+                border: `1px solid ${theme.colors.borderSoft}`,
+                borderRadius: 10,
+                padding: 8,
+                display: "grid",
+                gap: 6,
+                color: "#e5e7eb",
+                opacity: diasHabilitados ? 1 : 0.5,
+              }}
+            >
+              {["2", "3", "4", "5", "6", "7"].map((d) => {
+                const label =
+                  d === "2"
+                    ? "Segunda"
+                    : d === "3"
+                      ? "Terça"
+                      : d === "4"
+                        ? "Quarta"
+                        : d === "5"
+                          ? "Quinta"
+                          : d === "6"
+                            ? "Sexta"
+                            : "Sábado";
+                return (
+                  <label key={d} style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12 }}>
+                    <input
+                      type="checkbox"
+                      disabled={!diasHabilitados}
+                      checked={diasSemana.includes(d)}
+                      onChange={(e) => {
+                        setDiasSemana((curr) => {
+                          if (e.target.checked) return [...new Set([...curr, d])];
+                          return curr.filter((x) => x !== d);
+                        });
+                      }}
+                    />
+                    {label}
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
+              Obs.: só habilitado para Semanal ou Quinzenal.
+            </div>
           </div>
-
           <div>
             <label style={styles.label}>Periodicidade</label>
             <select
               value={periodicidade}
               onChange={(e) => setPeriodicidade(e.target.value as Periodicidade)}
               style={styles.input}
-              disabled={lockModeloFields || tipoRotina === "avulsa"}
+              disabled={lockModeloFields}
             >
               <option value="diaria">Diária</option>
               <option value="semanal">Semanal</option>
+              <option value="quinzenal">Quinzenal (2x mês)</option>
               <option value="mensal">Mensal</option>
             </select>
           </div>
         </div>
 
-        {/* ✅ BLOCO CORRIGIDO: dia da semana SEMPRE destravado e sem duplicação */}
-        <div>
-          <label style={styles.label}>Dia da semana</label>
-          <select value={diaSemana} onChange={(e) => setDiaSemana(e.target.value as any)} style={styles.input}>
-            <option value="2">Segunda-feira</option>
-            <option value="3">Terça-feira</option>
-            <option value="4">Quarta-feira</option>
-            <option value="5">Quinta-feira</option>
-            <option value="6">Sexta-feira</option>
-            <option value="7">Sábado</option>
-          </select>
-
-          <div style={{ marginTop: 4, fontSize: 11, color: "#9ca3af" }}>
-            Obs.: o dia da semana só é aplicado quando a periodicidade for <b>Semanal</b>.
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
             <label style={styles.label}>Data de início (opcional)</label>
-            <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} style={styles.input} min={todayISO()} />
-
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-              <button
-                type="button"
-                onClick={() => setDataInicio(todayISO())}
-                style={{ ...styles.button, padding: "4px 10px", fontSize: 12, background: "#111827", color: "#e5e7eb" }}
-              >
-                Hoje
-              </button>
-              <button
-                type="button"
-                onClick={() => setDataInicio(addDaysISO(todayISO(), 1))}
-                style={{ ...styles.button, padding: "4px 10px", fontSize: 12, background: "#111827", color: "#e5e7eb" }}
-              >
-                Amanhã
-              </button>
-              <button
-                type="button"
-                onClick={() => setDataInicio(addDaysISO(todayISO(), 7))}
-                style={{ ...styles.button, padding: "4px 10px", fontSize: 12, background: "#111827", color: "#e5e7eb" }}
-              >
-                +7 dias
-              </button>
-              <button
-                type="button"
-                onClick={() => setDataInicio("")}
-                style={{ ...styles.button, padding: "4px 10px", fontSize: 12, background: "#111827", color: "#e5e7eb", opacity: 0.85 }}
-              >
-                Limpar
-              </button>
-            </div>
+            <input
+              type="date"
+              value={dataInicio}
+              onChange={(e) => setDataInicio(e.target.value)}
+              style={styles.input}
+              min={todayISO()}
+            />
           </div>
-
           <div>
             <label style={styles.label}>Horário (agenda)</label>
-            <input type="time" value={horarioInicio} onChange={(e) => setHorarioInicio(e.target.value)} style={styles.input} />
+            <input
+              type="time"
+              value={horarioInicio}
+              onChange={(e) => setHorarioInicio(e.target.value)}
+              style={styles.input}
+            />
+            <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
+              Duração estimada: {duracao} min • Horário atual: {String(hora).padStart(2, "0")}:{String(minuto).padStart(2, "0")}
+            </div>
           </div>
         </div>
 
-        {usandoModelo ? (
-          <div style={{ border: "1px dashed #334155", borderRadius: 12, padding: 10, fontSize: 12, color: "#9ca3af" }}>
-            <strong>Definições do modelo:</strong>{" "}
-            Checklist: <b>{flagsEfetivas.temChecklist ? "Sim" : "Não"}</b> • Anexo: <b>{flagsEfetivas.temAnexo ? "Sim" : "Não"}</b>
-            <div style={{ marginTop: 4 }}>Obs.: checklist/anexo são definidos no modelo e não são alterados aqui.</div>
-          </div>
-        ) : (
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#e5e7eb" }}>
-              <input type="checkbox" checked={temChecklist} onChange={(e) => setTemChecklist(e.target.checked)} />
-              Terá checklist?
-            </label>
-
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#e5e7eb" }}>
-              <input type="checkbox" checked={temAnexo} onChange={(e) => setTemAnexo(e.target.checked)} />
-              Terá anexo obrigatório?
-            </label>
-          </div>
-        )}
-
-        <div
-          style={{
-            marginTop: 4,
-            padding: 10,
-            borderRadius: 8,
-            border: "1px solid #1f2933",
-            background: "#020617",
-            fontSize: 12,
-            color: "#e5e7eb",
-          }}
-        >
-          <strong>Resumo:</strong>
-          <div>Título: {titulo || "(sem título)"}</div>
-          <div>Responsável: {responsavelLabel}</div>
-          <div>
-            Urgência: {urgencia} • Tipo: {tipoRotina} • Periodicidade: {tipoRotina === "avulsa" ? "diaria" : periodicidade}
-          </div>
-          <div>
-            Horário: {String(hora).padStart(2, "0")}:{String(minuto).padStart(2, "0")} • Duração: {duracao} min
-          </div>
-          <div>
-            Checklist: {flagsEfetivas.temChecklist ? "Sim" : "Não"} • Anexo: {flagsEfetivas.temAnexo ? "Sim" : "Não"}
-          </div>
-          <div style={{ marginTop: 6, color: "#9ca3af" }}>
-            regional_id aplicado: <b style={{ color: "#e5e7eb" }}>{regionalPreview}</b>
-          </div>
+        <div style={{ display: "grid", gap: 6 }}>
+          <label style={styles.label}>Checklist e anexo</label>
+          <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "#e5e7eb" }}>
+            <input
+              type="checkbox"
+              checked={temChecklist}
+              onChange={(e) => setTemChecklist(e.target.checked)}
+              disabled={lockModeloFields}
+            />
+            Rotina tem checklist?
+          </label>
+          <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "#e5e7eb" }}>
+            <input type="checkbox" checked={temAnexo} onChange={(e) => setTemAnexo(e.target.checked)} disabled={lockModeloFields} />
+            Rotina exige anexo na execução?
+          </label>
         </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            ...styles.button,
-            marginTop: 8,
-            background: loading ? "#14532d" : "linear-gradient(90deg, #22c55e, #eab308)",
-            color: "#000",
-            fontSize: 15,
-          }}
-        >
-          {loading ? "Criando rotina..." : "Criar rotina"}
-        </button>
-      </form>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <button
+            type="submit"
+            style={{
+              ...styles.button,
+              padding: "10px 16px",
+              background: theme.colors.neonGreen,
+              color: "#022c22",
+              border: "none",
+            }}
+            disabled={loading}
+          >
+            {loading ? "Salvando..." : "Salvar rotina"}
+          </button>
+          <button
+            type="button"
+            style={{ ...styles.button, padding: "10px 16px", background: "#111827", color: "#e5e7eb" }}
+            onClick={() => {
+              setTitulo("");
+              setDescricao("");
+              setDuracaoMinutos("30");
+              setUrgencia("alta");
+              setTipoRotina("normal");
+              setPeriodicidade("diaria");
+              setDiaSemana("2");
+              setDataInicio("");
+              setHorarioInicio("08:00");
+              setTemChecklist(false);
+              setTemAnexo(false);
+              setRotinaPadraoId("");
+              setGrupoId((prev) => {
+                if (prev && grupos.some((g) => String(g.id) === String(prev))) return prev;
+                return grupos[0] ? String(grupos[0].id) : "";
+              });
+            }}
+          >
+            Limpar
+          </button>
+        </div>
 
-      {statusMsg && <p style={{ fontSize: 13, color: "#bbf7d0", marginTop: 10 }}>{statusMsg}</p>}
-
-      {details && (
-        <>
-          <h4 style={{ marginTop: 8, color: "#facc15", fontSize: 13 }}>
-            Retorno da função
-          </h4>
+        {statusMsg && <div style={{ fontSize: 12, color: "#e5e7eb" }}>{statusMsg}</div>}
+        {details && (
           <pre
             style={{
-              background: "#000",
-              color: "#4ade80",
-              padding: 12,
+              background: "#0f172a",
+              color: "#e5e7eb",
+              padding: 10,
               borderRadius: 8,
+              fontSize: 11,
               maxHeight: 260,
               overflow: "auto",
-              fontSize: 11,
             }}
           >
             {details}
           </pre>
-        </>
-      )}
+        )}
+      </form>
     </section>
   );
 }
+
+export default N1CreateRotina;

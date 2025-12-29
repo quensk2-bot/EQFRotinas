@@ -1,0 +1,350 @@
+todas as tabela do v14qui esta todas as tabela atualizada 
+
+create table public.departamentos (
+  id bigserial not null,
+  nome text not null,
+  codigo text null,
+  ativo boolean not null default true,
+  created_at timestamp with time zone not null default now(),
+  constraint departamentos_pkey primary key (id),
+  constraint departamentos_codigo_key unique (codigo)
+) TABLESPACE pg_default;
+
+
+
+
+create table public.grupos (
+  id bigserial not null,
+  departamento_id bigint not null,
+  setor_id bigint not null,
+  regional_id bigint not null,
+  nome text not null,
+  codigo text null,
+  ativo boolean not null default true,
+  created_at timestamp with time zone not null default now(),
+  constraint grupos_pkey primary key (id),
+  constraint grupos_unique_dept_setor_regional_nome unique (departamento_id, setor_id, regional_id, nome),
+  constraint grupos_departamento_id_fkey foreign KEY (departamento_id) references departamentos (id) on delete RESTRICT,
+  constraint grupos_regional_id_fkey foreign KEY (regional_id) references regionais (id) on delete RESTRICT,
+  constraint grupos_setor_id_fkey foreign KEY (setor_id) references setores (id) on delete RESTRICT
+) TABLESPACE pg_default;
+
+create index IF not exists idx_grupos_departamento on public.grupos using btree (departamento_id) TABLESPACE pg_default;
+
+create index IF not exists idx_grupos_setor on public.grupos using btree (setor_id) TABLESPACE pg_default;
+
+create index IF not exists idx_grupos_regional on public.grupos using btree (regional_id) TABLESPACE pg_default;
+
+
+
+
+
+create table public.regionais (
+  id bigserial not null,
+  setor_id bigint not null,
+  nome text not null,
+  sigla text null,
+  ativo boolean not null default true,
+  created_at timestamp with time zone not null default now(),
+  constraint regionais_pkey primary key (id),
+  constraint regionais_setor_id_fkey foreign KEY (setor_id) references setores (id) on delete RESTRICT
+) TABLESPACE pg_default;
+
+create index IF not exists idx_regionais_setor_id on public.regionais using btree (setor_id) TABLESPACE pg_default;
+
+
+
+create table public.rotina_anexos (
+  id bigserial not null,
+  rotina_id uuid not null,
+  executor_id uuid null,
+  storage_path text not null,
+  descricao text null,
+  created_at timestamp with time zone not null default now(),
+  execucao_id bigint null,
+  constraint rotina_anexos_pkey primary key (id),
+  constraint rotina_anexos_execucao_id_fkey foreign KEY (execucao_id) references rotina_execucoes (id) on delete CASCADE,
+  constraint rotina_anexos_executor_id_fkey foreign KEY (executor_id) references usuarios (id) on delete set null,
+  constraint rotina_anexos_rotina_id_fkey foreign KEY (rotina_id) references rotinas (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_rotina_anexos_execucao_id on public.rotina_anexos using btree (execucao_id) TABLESPACE pg_default;
+
+create index IF not exists idx_rotina_anexos_rotina_id on public.rotina_anexos using btree (rotina_id) TABLESPACE pg_default;
+
+
+
+
+
+create table public.rotina_checklist (
+  id bigserial not null,
+  rotina_id uuid not null,
+  ordem smallint not null,
+  descricao text not null,
+  valor_numerico numeric null,
+  valor_texto text null,
+  concluido boolean not null default false,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  obrigatorio boolean not null default false,
+  exige_anexo boolean not null default false,
+  tipo_valor text null,
+  valor_minimo numeric null,
+  valor_maximo numeric null,
+  constraint rotina_checklist_pkey primary key (id),
+  constraint rotina_checklist_rotina_id_fkey foreign KEY (rotina_id) references rotinas (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_rotina_checklist_rotina_id on public.rotina_checklist using btree (rotina_id) TABLESPACE pg_default;
+
+create trigger set_rotina_checklist_updated_at BEFORE
+update on rotina_checklist for EACH row
+execute FUNCTION set_current_timestamp_updated_at ();
+
+
+
+
+
+create table public.rotina_checklist_execucao (
+  id bigserial not null,
+  execucao_id bigint not null,
+  checklist_id bigint not null,
+  concluido boolean not null default false,
+  valor_numerico numeric null,
+  valor_texto text null,
+  created_at timestamp with time zone not null default now(),
+  constraint rotina_checklist_execucao_pkey primary key (id),
+  constraint rotina_checklist_execucao_checklist_id_fkey foreign KEY (checklist_id) references rotina_checklist (id) on delete CASCADE,
+  constraint rotina_checklist_execucao_execucao_id_fkey foreign KEY (execucao_id) references rotina_execucoes (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_checklist_execucao_execucao on public.rotina_checklist_execucao using btree (execucao_id) TABLESPACE pg_default;
+
+create index IF not exists idx_checklist_execucao_checklist on public.rotina_checklist_execucao using btree (checklist_id) TABLESPACE pg_default;
+
+
+
+
+create table public.rotina_execucoes (
+  id bigserial not null,
+  rotina_id uuid not null,
+  executor_id uuid not null,
+  inicio_em timestamp with time zone null,
+  pausado_em timestamp with time zone null,
+  finalizado_em timestamp with time zone null,
+  duracao_total_segundos integer null,
+  observacoes text null,
+  created_at timestamp with time zone not null default now(),
+  checklist_execucao jsonb null,
+  departamento_id bigint null,
+  setor_id bigint null,
+  regional_id bigint null,
+  grupo_id bigint null,
+  constraint rotina_execucoes_pkey primary key (id),
+  constraint rotina_execucoes_executor_id_fkey foreign KEY (executor_id) references usuarios (id) on delete RESTRICT,
+  constraint rotina_execucoes_grupo_id_fkey foreign KEY (grupo_id) references grupos (id),
+  constraint rotina_execucoes_rotina_id_fkey foreign KEY (rotina_id) references rotinas (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_rotina_execucoes_rotina_id on public.rotina_execucoes using btree (rotina_id) TABLESPACE pg_default;
+
+create index IF not exists idx_rotina_execucoes_executor_id on public.rotina_execucoes using btree (executor_id) TABLESPACE pg_default;
+
+create index IF not exists idx_rotina_execucoes_grupo on public.rotina_execucoes using btree (grupo_id) TABLESPACE pg_default;
+
+
+
+
+
+create table public.rotina_pausas (
+  id bigserial not null,
+  execucao_id bigint not null,
+  inicio_em timestamp with time zone not null,
+  fim_em timestamp with time zone null,
+  constraint rotina_pausas_pkey primary key (id),
+  constraint rotina_pausas_execucao_id_fkey foreign KEY (execucao_id) references rotina_execucoes (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_rotina_pausas_execucao on public.rotina_pausas using btree (execucao_id) TABLESPACE pg_default;
+
+
+
+
+
+create table public.rotinas (
+  id uuid not null default gen_random_uuid (),
+  tipo public.rotina_tipo not null,
+  periodicidade public.rotina_periodicidade not null,
+  titulo text not null,
+  descricao text null,
+  criador_id uuid not null,
+  responsavel_id uuid not null,
+  departamento_id bigint null,
+  setor_id bigint null,
+  regional_id bigint null,
+  data_inicio date not null,
+  horario_inicio time without time zone not null,
+  duracao_minutos integer not null,
+  urgencia public.rotina_urgencia not null default 'baixa'::rotina_urgencia,
+  tem_checklist boolean not null default false,
+  tem_anexo boolean not null default false,
+  status public.rotina_status not null default 'pendente'::rotina_status,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  duracao integer null,
+  prioridade text null,
+  dia_semana text null,
+  horario time without time zone null,
+  checklist jsonb null,
+  grupo_id bigint null,
+  constraint rotinas_pkey primary key (id),
+  constraint rotinas_departamento_id_fkey foreign KEY (departamento_id) references departamentos (id),
+  constraint rotinas_grupo_id_fkey foreign KEY (grupo_id) references grupos (id),
+  constraint rotinas_criador_id_fkey foreign KEY (criador_id) references usuarios (id) on delete RESTRICT,
+  constraint rotinas_regional_id_fkey foreign KEY (regional_id) references regionais (id),
+  constraint rotinas_responsavel_id_fkey foreign KEY (responsavel_id) references usuarios (id) on delete RESTRICT,
+  constraint rotinas_setor_id_fkey foreign KEY (setor_id) references setores (id)
+) TABLESPACE pg_default;
+
+create index IF not exists idx_rotinas_responsavel_data on public.rotinas using btree (responsavel_id, data_inicio) TABLESPACE pg_default;
+
+create index IF not exists idx_rotinas_hierarquia on public.rotinas using btree (departamento_id, setor_id, regional_id) TABLESPACE pg_default;
+
+create index IF not exists idx_rotinas_hierarquia_grupo on public.rotinas using btree (departamento_id, setor_id, regional_id, grupo_id) TABLESPACE pg_default;
+
+create index IF not exists idx_rotina_diaria_horario on public.rotinas using btree (responsavel_id, data_inicio, horario_inicio) TABLESPACE pg_default;
+
+create trigger set_rotinas_updated_at BEFORE
+update on rotinas for EACH row
+execute FUNCTION set_current_timestamp_updated_at ();
+
+create trigger trg_limitar_rotinas_mesmo_horario BEFORE INSERT
+or
+update on rotinas for EACH row
+execute FUNCTION fn_limitar_rotinas_mesmo_horario ();
+
+
+create table public.rotinas_padrao (
+  id uuid not null default gen_random_uuid (),
+  titulo text not null,
+  descricao text null,
+  sugestao_duracao_minutos integer null,
+  checklist_padrao jsonb null,
+  anexos_padrao jsonb null,
+  tipos_itens jsonb null,
+  exige_anexos boolean null default false,
+  criado_por_id uuid not null,
+  criado_em timestamp with time zone null default now(),
+  atualizado_em timestamp with time zone null default now(),
+  periodicidade text null default 'diaria'::text,
+  arquivo_modelo_url text null,
+  arquivo_modelo_nome text null,
+  criado_por uuid null,
+  duracao_minutos integer null,
+  urgencia text null,
+  tipo text null,
+  dia_semana text null,
+  tem_checklist boolean not null default false,
+  tem_anexo boolean not null default false,
+  departamento_id integer null,
+  setor_id integer null,
+  constraint rotinas_padrao_pkey primary key (id),
+  constraint rotinas_padrao_criado_por_id_fkey foreign KEY (criado_por_id) references usuarios (id)
+) TABLESPACE pg_default;
+
+create trigger trg_rotinas_padrao_updated BEFORE
+update on rotinas_padrao for EACH row
+execute FUNCTION set_updated_at ();
+
+
+
+create table public.setores (
+  id bigserial not null,
+  departamento_id bigint not null,
+  nome text not null,
+  codigo text null,
+  ativo boolean not null default true,
+  created_at timestamp with time zone not null default now(),
+  constraint setores_pkey primary key (id),
+  constraint setores_departamento_id_fkey foreign KEY (departamento_id) references departamentos (id) on delete RESTRICT
+) TABLESPACE pg_default;
+
+create index IF not exists idx_setores_departamento_id on public.setores using btree (departamento_id) TABLESPACE pg_default;
+
+
+
+
+create table public.usuarios (
+  id uuid not null,
+  nome text not null,
+  email text not null,
+  nivel public.usuario_nivel not null,
+  departamento_id bigint null,
+  setor_id bigint null,
+  regional_id bigint null,
+  ativo boolean not null default true,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  grupo_id bigint null,
+  constraint usuarios_pkey primary key (id),
+  constraint usuarios_departamento_id_fkey foreign KEY (departamento_id) references departamentos (id),
+  constraint usuarios_grupo_id_fkey foreign KEY (grupo_id) references grupos (id),
+  constraint usuarios_id_fkey foreign KEY (id) references auth.users (id) on delete CASCADE,
+  constraint usuarios_regional_id_fkey foreign KEY (regional_id) references regionais (id),
+  constraint usuarios_setor_id_fkey foreign KEY (setor_id) references setores (id)
+) TABLESPACE pg_default;
+
+create index IF not exists idx_usuarios_nivel on public.usuarios using btree (nivel) TABLESPACE pg_default;
+
+create index IF not exists idx_usuarios_regional on public.usuarios using btree (departamento_id, setor_id, regional_id) TABLESPACE pg_default;
+
+create index IF not exists idx_usuarios_grupo_id on public.usuarios using btree (grupo_id) TABLESPACE pg_default;
+
+create trigger set_usuarios_updated_at BEFORE
+update on usuarios for EACH row
+execute FUNCTION set_current_timestamp_updated_at ();
+
+
+create view public.vw_rotinas_hoje as
+select
+  id,
+  tipo,
+  periodicidade,
+  titulo,
+  descricao,
+  criador_id,
+  responsavel_id,
+  departamento_id,
+  setor_id,
+  regional_id,
+  data_inicio,
+  horario_inicio,
+  duracao_minutos,
+  urgencia,
+  tem_checklist,
+  tem_anexo,
+  status,
+  created_at,
+  updated_at,
+  duracao,
+  prioridade,
+  dia_semana,
+  horario
+from
+  rotinas r
+where
+  lower(periodicidade::text) = 'diaria'::text
+  or lower(periodicidade::text) = 'semanal'::text
+  and lower(COALESCE(dia_semana, ''::text)) = lower(to_char(now(), 'fmday'::text))
+  or lower(periodicidade::text) = 'mensal'::text
+  and EXTRACT(
+    day
+    from
+      data_inicio
+  ) = EXTRACT(
+    day
+    from
+      now()
+  )
+  or lower(tipo::text) = 'avulsa'::text
+  and data_inicio = CURRENT_DATE;

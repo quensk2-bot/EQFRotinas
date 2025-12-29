@@ -71,6 +71,8 @@ const shellStyles: Record<string, CSSProperties> = {
   root: {
     display: "flex",
     minHeight: "100vh",
+    width: "100vw",
+    overflowX: "hidden",
     background: theme.colors.appBackground ?? "#020617",
     color: theme.colors.text ?? "#f9fafb",
     fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
@@ -167,6 +169,7 @@ const shellStyles: Record<string, CSSProperties> = {
   },
   main: {
     flex: 1,
+    width: "100%",
     padding: 24,
     boxSizing: "border-box",
     display: "flex",
@@ -315,6 +318,7 @@ const shellStyles: Record<string, CSSProperties> = {
 };
 
 const STORAGE_MENU_KEY = "eqf_v14_menu_main";
+const STORAGE_EXEC_KEY = "eqf_v14_exec_rotina";
 
 function formatSeconds(total: number | null | undefined): string {
   if (total == null) return "—";
@@ -332,6 +336,29 @@ function formatPeriodoLabel(p: DashPeriodo): string {
   return "Últimos 30 dias";
 }
 export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
+  const isN3 = perfil.nivel === "N3";
+  const cardStyleN3: CSSProperties = isN3
+    ? { ...shellStyles.card, borderRadius: 0, border: "none", minHeight: "calc(100vh - 48px)", padding: 16, width: "100%" }
+    : shellStyles.card;
+  const gridSingleN3: CSSProperties = isN3
+    ? { ...shellStyles.cardsGridSingle, width: "100%", marginTop: 0 }
+    : shellStyles.cardsGridSingle;
+  const cardStyle = (extra?: CSSProperties): CSSProperties => ({
+    ...shellStyles.card,
+    ...(isN3
+      ? {
+          borderRadius: 0,
+          border: "none",
+          minHeight: "calc(100vh - 48px)",
+          padding: 16,
+        }
+      : {}),
+    ...(extra || {}),
+  });
+  const singleGridStyle: CSSProperties = {
+    ...shellStyles.cardsGridSingle,
+    ...(isN3 ? { width: "100%", marginTop: 0 } : {}),
+  };
   const [menu, setMenu] = useState<MenuKey>(() => {
     if (typeof window === "undefined") return perfil.nivel === "N1" ? "overview" : "agenda";
     const stored = window.localStorage.getItem(STORAGE_MENU_KEY) as MenuKey | null;
@@ -346,6 +373,14 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
   const abrirExecucao = (rotina: Rotina) => {
     setRotinaSelecionada(rotina);
     setExecOpen(true);
+    try {
+      window.localStorage.setItem(
+        STORAGE_EXEC_KEY,
+        JSON.stringify({ rotinaId: rotina.id, executorId: perfil.id })
+      );
+    } catch {
+      // ignore
+    }
   };
 
   const minimizarExecucao = () => {
@@ -359,6 +394,15 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
   const fecharExecucao = () => {
     setExecOpen(false);
     setRotinaSelecionada(null);
+    try {
+      window.localStorage.removeItem(STORAGE_EXEC_KEY);
+    } catch {
+      // ignore
+    }
+  };
+
+  const finalizarExecucao = () => {
+    fecharExecucao();
   };
 
   // ✅ MENU: KPI liberado N1/N2/N3
@@ -402,6 +446,85 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(STORAGE_MENU_KEY, menu);
   }, [menu]);
+
+  // reabrir automaticamente o card de execucao somente para o executor e somente se houver execucao em aberto
+  useEffect(() => {
+    if (rotinaSelecionada) {
+      setExecOpen(true);
+      try {
+        window.localStorage.setItem(
+          STORAGE_EXEC_KEY,
+          JSON.stringify({ rotinaId: rotinaSelecionada.id, executorId: perfil.id })
+        );
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    const raw = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_EXEC_KEY) : null;
+    if (!raw) return;
+
+    let stored: { rotinaId: string; executorId: string } | null = null;
+    try {
+      stored = JSON.parse(raw);
+    } catch {
+      stored = null;
+    }
+
+    if (!stored || stored.executorId !== perfil.id) {
+      window.localStorage.removeItem(STORAGE_EXEC_KEY);
+      return;
+    }
+
+    void (async () => {
+      const { data: rotinaData } = await supabase.from("rotinas").select("*").eq("id", stored!.rotinaId).maybeSingle();
+      const { data: execRow } = await supabase
+        .from("rotina_execucoes")
+        .select("id, finalizado_em")
+        .eq("rotina_id", stored!.rotinaId)
+        .eq("executor_id", perfil.id)
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const emAberto = execRow && !execRow.finalizado_em;
+      if (rotinaData && emAberto) {
+        setRotinaSelecionada(rotinaData as any);
+        setExecOpen(true);
+      } else {
+        window.localStorage.removeItem(STORAGE_EXEC_KEY);
+      }
+    })().catch(() => {
+      window.localStorage.removeItem(STORAGE_EXEC_KEY);
+    });
+  }, [rotinaSelecionada, perfil.id, supabase]);
+
+  // reabrir automaticamente o card de execucao ao entrar na agenda se houver rotina selecionada ou armazenada
+  useEffect(() => {
+    const stored = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_EXEC_KEY) : null;
+    if (!rotinaSelecionada && stored) {
+      void supabase
+        .from("rotinas")
+        .select("*")
+        .eq("id", stored)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setRotinaSelecionada(data as any);
+        })
+        .catch(() => {});
+    }
+    if (menu === "agenda" && (rotinaSelecionada || stored)) {
+      setExecOpen(true);
+    }
+  }, [menu, rotinaSelecionada]);
+
+  // reabrir automaticamente o card de execucao quando estiver na Agenda e houver rotina selecionada
+  useEffect(() => {
+    if (menu === "agenda" && rotinaSelecionada) {
+      setExecOpen(true);
+    }
+  }, [menu, rotinaSelecionada]);
 
   // DASHBOARD – KPI N1
   const [dashPeriodo, setDashPeriodo] = useState<DashPeriodo>("30D");
@@ -731,7 +854,7 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
           <div style={shellStyles.sectionTitle}>Agenda do dia</div>
           <div style={shellStyles.cardsGridSingle}>
             <div style={shellStyles.card}>
-              <AgendaHoje perfil={perfil} onAbrirExecucao={abrirExecucao} />
+              <AgendaHoje perfil={perfil} autoScrollToHour={false} onAbrirExecucao={abrirExecucao} />
             </div>
           </div>
         </>
@@ -762,7 +885,7 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
                   <div style={shellStyles.cardSubtitle}>Rotinas agendadas hoje (suas e da equipe).</div>
                 </div>
               </div>
-              <AgendaHoje perfil={perfil} onAbrirExecucao={abrirExecucao} />
+              <AgendaHoje perfil={perfil} autoScrollToHour={false} onAbrirExecucao={abrirExecucao} />
             </div>
 
             <div style={shellStyles.card}>
@@ -793,9 +916,9 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
           </div>
         </div>
 
-        <div style={shellStyles.cardsGridSingle}>
-          <div style={shellStyles.card}>
-            <AgendaHoje perfil={perfil} onAbrirExecucao={abrirExecucao} />
+        <div style={gridSingleN3}>
+          <div style={cardStyleN3}>
+            <AgendaHoje perfil={perfil} autoScrollToHour={false} onAbrirExecucao={abrirExecucao} />
           </div>
         </div>
       </>
@@ -834,46 +957,46 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
     }
 
     return (
-      <div style={shellStyles.cardsGridSingle}>
-        <div style={shellStyles.card}>
+      <div style={gridSingleN3}>
+        <div style={cardStyleN3}>
           <N3CriarRotinaAvulsa perfil={perfil} />
         </div>
 
-        <div style={shellStyles.card}>
-          <AgendaHoje perfil={perfil} onAbrirExecucao={abrirExecucao} />
+        <div style={cardStyleN3}>
+          <AgendaHoje perfil={perfil} autoScrollToHour={false} onAbrirExecucao={abrirExecucao} />
         </div>
       </div>
     );
   };
 
   const renderAgenda = () => (
-    <div style={shellStyles.cardsGridSingle}>
-      <div style={shellStyles.card}>
-        <AgendaHoje perfil={perfil} onAbrirExecucao={abrirExecucao} />
+    <div style={gridSingleN3}>
+      <div style={cardStyleN3}>
+        <AgendaHoje perfil={perfil} autoScrollToHour onAbrirExecucao={abrirExecucao} />
       </div>
     </div>
   );
   // ✅ KPI NOVO (N1/N2/N3)
   // Agora o menu KPI aponta para o KpiPageV14 (individual/regional/nacional conforme perfil)
   const renderKpi = () => (
-    <div style={shellStyles.cardsGridSingle}>
-      <div style={shellStyles.card}>
+    <div style={gridSingleN3}>
+      <div style={cardStyleN3}>
         <KpiPageV14 perfil={perfil} />
       </div>
     </div>
   );
 
   const renderExecucaoAoVivo = () => (
-    <div style={shellStyles.cardsGridSingle}>
-      <div style={shellStyles.card}>
+    <div style={gridSingleN3}>
+      <div style={cardStyleN3}>
         <ExecucaoAoVivoBoard2 perfil={perfil} />
       </div>
     </div>
   );
 
   const renderModelos = () => (
-    <div style={shellStyles.cardsGridSingle}>
-      <div style={shellStyles.card}>
+    <div style={gridSingleN3}>
+      <div style={cardStyleN3}>
         <RotinasPadraoPage usuarioLogado={perfil} />
       </div>
     </div>
@@ -922,7 +1045,7 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
         </div>
       </aside>
 
-      <main style={shellStyles.main}>
+      <main style={{ ...shellStyles.main, ...(isN3 ? { padding: 0, gap: 0 } : {}) }}>
         {menu === "overview" && renderOverview()}
         {menu === "rotinas" && renderRotinas()}
         {menu === "agenda" && renderAgenda()}
@@ -938,6 +1061,7 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
           onClose={minimizarExecucao}
           onRestore={reabrirExecucao}
           onDismiss={fecharExecucao}
+          onFinalizada={finalizarExecucao}
         />
       </main>
     </div>

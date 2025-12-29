@@ -9,6 +9,7 @@ type RotinaExecucaoContainerProps = {
   rotina: Rotina | null;
   perfil: Usuario;
   onClose: () => void;
+  onFinalizada?: () => void;
 };
 
 type ChecklistItemExec = {
@@ -137,6 +138,17 @@ const colunaTitleStyle: React.CSSProperties = {
   fontWeight: 600,
   marginBottom: 8,
 };
+const downloadLinkStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  fontSize: 12,
+  color: theme.colors.neonGreen ?? "#22c55e",
+  textDecoration: "none",
+  border: `1px solid ${borderSoft}`,
+  padding: "6px 10px",
+  borderRadius: 10,
+};
 
 const checklistListStyle: React.CSSProperties = {
   flex: 1,
@@ -261,7 +273,7 @@ function endOfDayLocalToUTCExclusive(dateISO: string): string {
   return d.toISOString();
 }
 
-export function RotinaExecucaoContainer({ open, rotina, perfil, onClose }: RotinaExecucaoContainerProps) {
+export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinalizada }: RotinaExecucaoContainerProps) {
   const [isMinimized, setIsMinimized] = useState(false);
 
   const [isPaused, setIsPaused] = useState(false);
@@ -286,6 +298,7 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose }: Rotin
   const baseAcumuladaRef = useRef<number>(0);
   const inicioRodandoRef = useRef<string | null>(null);
   const tickTimerRef = useRef<number | null>(null);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ✅ Permissão por hierarquia (VIEW)
   const canView = useMemo(() => {
@@ -563,7 +576,17 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose }: Rotin
     };
   }, [execucaoId, isFinalizada, elapsedSeconds, observacoes, checklist, isReadOnly]);
 
-  if (!open || !rotina) return null;
+  useEffect(() => {
+    if (!execucaoId || isReadOnly || isFinalizada) return;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      void persistEstadoParcial();
+    }, 800);
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checklist, observacoes]);
 
   const persistEstadoParcial = async (extra: Record<string, any> = {}) => {
     if (!execucaoId || isReadOnly) return;
@@ -610,6 +633,28 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose }: Rotin
     }
   };
 
+  const handleMinimizar = async () => {
+    await persistEstadoParcial();
+    setIsMinimized(true);
+  };
+
+  const handleFechar = async () => {
+    await persistEstadoParcial();
+    onClose();
+  };
+
+  useEffect(() => {
+    const beforeUnload = (e: BeforeUnloadEvent) => {
+      if (!execucaoId || isReadOnly || isFinalizada) return;
+      void persistEstadoParcial();
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [execucaoId, isReadOnly, isFinalizada, observacoes, checklist, elapsedSeconds]);
+
   const handleFinalizar = async () => {
     if (!execucaoId || isReadOnly) return;
 
@@ -644,8 +689,10 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose }: Rotin
     baseAcumuladaRef.current = elapsedSeconds;
     inicioRodandoRef.current = null;
 
-    onClose();
+    if (onFinalizada) onFinalizada();
   };
+
+  if (!open || !rotina) return null;
 
   const handleToggleChecklistItem = (ordem: number) => {
     if (isFinalizada || isReadOnly) return;
@@ -735,11 +782,11 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose }: Rotin
             {statusBadge()}
             <span style={cronometroStyle}>{formatSeconds(elapsedSeconds)}</span>
 
-            <button type="button" style={btnMinimizarStyle} onClick={() => setIsMinimized(true)}>
+            <button type="button" style={btnMinimizarStyle} onClick={handleMinimizar}>
               Minimizar
             </button>
 
-            <button type="button" style={btnFecharStyle} onClick={onClose}>
+            <button type="button" style={btnFecharStyle} onClick={handleFechar}>
               Fechar
             </button>
           </div>
@@ -759,6 +806,12 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose }: Rotin
                 <div style={{ fontSize: 11, color: textMuted, marginBottom: 6 }}>
                   {isReadOnly ? "Visualização do checklist (somente leitura)." : "Marque o item concluído e registre o valor da conferência."}
                 </div>
+
+                {rotina?.arquivo_modelo_url && (
+                  <a href={rotina.arquivo_modelo_url} target="_blank" rel="noreferrer" style={downloadLinkStyle}>
+                    📄 Baixar anexo da rotina {rotina.arquivo_modelo_nome ? `(${rotina.arquivo_modelo_nome})` : ""}
+                  </a>
+                )}
 
                 <div style={checklistListStyle}>
                   {checklist.map((item) => (
