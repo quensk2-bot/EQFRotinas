@@ -340,10 +340,19 @@ function formatPeriodoLabel(p: DashPeriodo): string {
 export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
   const isN3 = perfil.nivel === "N3";
   const cardStyleN3: CSSProperties = isN3
-    ? { ...shellStyles.card, borderRadius: 0, border: "none", minHeight: "calc(100vh - 48px)", padding: 16, width: "100%" }
+    ? {
+        ...shellStyles.card,
+        borderRadius: 12,
+        border: `1px solid ${theme.colors.borderSoft ?? "#1f2937"}`,
+        minHeight: "calc(100vh - 120px)",
+        padding: 16,
+        width: "100%",
+        maxWidth: 1160,
+        margin: "0 auto",
+      }
     : shellStyles.card;
   const gridSingleN3: CSSProperties = isN3
-    ? { ...shellStyles.cardsGridSingle, width: "100%", marginTop: 0 }
+    ? { ...shellStyles.cardsGridSingle, width: "100%", marginTop: 0, justifyItems: "center", justifyContent: "center" }
     : shellStyles.cardsGridSingle;
   const cardStyle = (extra?: CSSProperties): CSSProperties => ({
     ...shellStyles.card,
