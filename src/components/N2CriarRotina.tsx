@@ -144,6 +144,7 @@ export default function N2CriarRotina({ usuarioLogado }: Props) {
   const [periodicidade, setPeriodicidade] = useState<Periodicidade>("diaria");
   const [diasSemana, setDiasSemana] = useState<string[]>(["2"]);
   const [dataInicio, setDataInicio] = useState<string>(todayISO());
+  const [dataFim, setDataFim] = useState<string>("");
   const [horarioInicio, setHorarioInicio] = useState<string>("08:00");
 
   const [temChecklist, setTemChecklist] = useState(false);
@@ -444,6 +445,7 @@ export default function N2CriarRotina({ usuarioLogado }: Props) {
           periodicidade: periodicidadeParaEdge,
           dia_semana: dia,
           data_inicio: dataInicioFinal,
+          data_fim: dataFim || null,
           horario_inicio: horarioInicio,
           tem_checklist: lockModelo ? !!modelo?.tem_checklist : temChecklist,
           tem_anexo: lockModelo ? !!modelo?.tem_anexo : temAnexo,
@@ -718,6 +720,10 @@ export default function N2CriarRotina({ usuarioLogado }: Props) {
             <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} style={styles.input} />
           </div>
           <div>
+            <label style={styles.label}>Data de fim (opcional)</label>
+            <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} style={styles.input} min={dataInicio} />
+          </div>
+          <div>
             <label style={styles.label}>Horario</label>
             <input type="time" value={horarioInicio} onChange={(e) => setHorarioInicio(e.target.value)} style={styles.input} />
             <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
@@ -766,6 +772,7 @@ export default function N2CriarRotina({ usuarioLogado }: Props) {
               setPeriodicidade("diaria");
               setDiasSemana(["2"]);
               setDataInicio(todayISO());
+              setDataFim("");
               setHorarioInicio("08:00");
               setTemChecklist(false);
               setTemAnexo(false);

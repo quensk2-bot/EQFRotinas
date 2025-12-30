@@ -22,6 +22,7 @@ type Rotina = {
   tipo: string; // "avulsa" | "normal"
   periodicidade: string; // "diaria" | "semanal" | "mensal" | ...
   data_inicio: string; // YYYY-MM-DD
+  data_fim?: string | null;
   dia_semana: string | null; // 1..7 (dom..sab) como string
   horario_inicio: string | null; // "HH:MM"
   duracao_minutos: number | null;
@@ -112,6 +113,8 @@ function buildAgendaDoDia(rotinasBase: Rotina[], dateISO: string) {
   const dowNum = Number(dow); // 1=domingo, 7=sábado
 
   return rotinasBase.filter((r) => {
+    if (r.data_fim && dateISO > r.data_fim) return false;
+
     if (r.tipo === "avulsa") return r.data_inicio === dateISO;
 
     const p = (r.periodicidade ?? "").toLowerCase();
@@ -269,7 +272,7 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
         .select(
           `
           id, titulo, descricao, tipo, periodicidade,
-          data_inicio, dia_semana, horario_inicio, duracao_minutos,
+          data_inicio, data_fim, dia_semana, horario_inicio, duracao_minutos,
           urgencia, responsavel_id, departamento_id, setor_id, regional_id,
           tem_checklist, tem_anexo
         `
@@ -339,6 +342,15 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
       // N2 não enxerga rotinas cujo responsável é N1
       if (perfil.nivel === "N2") {
         rotinas = rotinas.filter((r) => usuarioNivelMap[r.responsavel_id] !== "N1");
+      }
+
+      // respeita data_fim
+      if (modo === "dia") {
+        rotinas = rotinas.filter((r) => !r.data_fim || r.data_fim >= dataRef);
+      } else {
+        const dataIni = dataRef;
+        const dataFim = addDaysYMD(dataRef, 6);
+        rotinas = rotinas.filter((r) => !r.data_fim || r.data_fim >= dataIni);
       }
 
       // filtro: não exibir diárias em sábado/domingo no dia selecionado

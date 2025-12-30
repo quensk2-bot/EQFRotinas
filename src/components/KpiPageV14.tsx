@@ -1,4 +1,4 @@
-// src/components/KpiPageV14.tsx
+﻿// src/components/KpiPageV14.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import type { Usuario } from "../types";
@@ -522,6 +522,62 @@ export const KpiPageV14: React.FC<Props> = ({ perfil }) => {
     return clamp(resumo.taxaExecucaoPct, 0, 100);
   }, [resumo]);
 
+  const rankingDias = useMemo(() => {
+    return [...detalheDias]
+      .map((d) => ({
+        ...d,
+        taxa: d.planejadas > 0 ? (d.finalizadas / d.planejadas) * 100 : 0,
+        label: new Date(`${d.dia}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+      }))
+      .sort((a, b) => b.taxa - a.taxa)
+      .slice(0, 5);
+  }, [detalheDias]);
+
+  const exportCsv = (rows: Array<Record<string, string | number>>) => {
+    const headers = Object.keys(rows[0] ?? {});
+    if (!headers.length) return;
+    const csv = [
+      headers.join(";"),
+      ...rows.map((r) => headers.map((h) => String(r[h] ?? "")).join(";")),
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "kpi-" + periodo.toLowerCase() + "-" + todayLocalYMD();
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportDetalhe = () => {
+    const rows = detalheDias.map((d) => ({
+      dia: d.dia,
+      planejadas: d.planejadas,
+      finalizadas: d.finalizadas,
+      tempo_programado_seg: d.tempoPlanSeg,
+      tempo_executado_seg: d.tempoExecSeg,
+    }));
+    if (rows.length) exportCsv(rows);
+  };
+
+  const exportRanking = () => {
+    const rows = rankingDias.map((d) => ({
+      dia: d.dia,
+      label: d.label,
+      planejadas: d.planejadas,
+      finalizadas: d.finalizadas,
+      taxa_execucao_pct: d.taxa.toFixed(1),
+      tempo_exec_seg: d.tempoExecSeg,
+    }));
+    if (rows.length) exportCsv(rows);
+  };
+
+  // ordenar detalhe por dia (mais recente primeiro)
+  const detalheOrdenado = useMemo(() => {
+    return [...detalheDias].sort((a, b) => (a.dia < b.dia ? 1 : -1));
+  }, [detalheDias]);
+
   const tituloPeriodo = (p: Periodo) => (p === "HOJE" ? "Hoje" : p === "7D" ? "Últimos 7 dias" : "Últimos 30 dias");
 
   const renderChip = (p: Periodo) => {
@@ -563,6 +619,31 @@ export const KpiPageV14: React.FC<Props> = ({ perfil }) => {
       {!loading && !erro && resumo && (
         <>
           <div style={styles.grid}>
+            {/* Resumo imediato */}
+            <div style={{ ...styles.card, ...styles.cardSmall }}>
+              <div style={styles.cardTitle}>Planejadas</div>
+              <div style={styles.cardValue}>{resumo.planejadas}</div>
+              <div style={styles.cardAux}>Ocorrências no período</div>
+            </div>
+
+            <div style={{ ...styles.card, ...styles.cardSmall }}>
+              <div style={styles.cardTitle}>Finalizadas</div>
+              <div style={styles.cardValue}>{resumo.finalizadas}</div>
+              <div style={styles.cardAux}>Com finalizado_em</div>
+            </div>
+
+            <div style={{ ...styles.card, ...styles.cardSmall }}>
+              <div style={styles.cardTitle}>Pendentes</div>
+              <div style={styles.cardValue}>{resumo.pendentes}</div>
+              <div style={styles.cardAux}>Sem execução no dia</div>
+            </div>
+
+            <div style={{ ...styles.card, ...styles.cardSmall }}>
+              <div style={styles.cardTitle}>Taxa de execução</div>
+              <div style={styles.cardValue}>{resumo.taxaExecucaoPct == null ? "—" : `${resumo.taxaExecucaoPct}%`}</div>
+              <div style={styles.cardAux}>Finalizadas / planejadas</div>
+            </div>
+
             {/* Planejado x Executado */}
             <div style={styles.card}>
               <div style={styles.cardTitle}>Rotinas planejadas x executadas</div>
@@ -636,6 +717,44 @@ export const KpiPageV14: React.FC<Props> = ({ perfil }) => {
               <div style={styles.cardAux}>Planejadas sem execução no dia</div>
             </div>
 
+            {/* Ranking de dias */}
+            <div style={{ ...styles.table, paddingBottom: 8 }}>
+              <div style={{ ...styles.tableHeader, gridTemplateColumns: "1fr 120px 120px 120px 120px" }}>
+                <div>Top dias por taxa de execução</div>
+                <div style={styles.tableRight}>Planejadas</div>
+                <div style={styles.tableRight}>Finalizadas</div>
+                <div style={styles.tableRight}>Taxa</div>
+                <div style={styles.tableRight}>
+                  <button
+                    type="button"
+                    onClick={exportRanking}
+                    style={{ ...styles.chipBtn, padding: "4px 8px", borderRadius: 8 }}
+                  >
+                    Exportar CSV
+                  </button>
+                </div>
+              </div>
+              {rankingDias.length === 0 && (
+                <div style={{ padding: 10, fontSize: 12, color: theme.colors.textMuted ?? "#9ca3af" }}>Sem dados no período.</div>
+              )}
+              {rankingDias.map((d, idx) => (
+                <div
+                  key={d.dia}
+                  style={{
+                    ...styles.tableRow,
+                    gridTemplateColumns: "1fr 120px 120px 120px 120px",
+                    background: idx % 2 === 0 ? "rgba(2,6,23,0.20)" : "rgba(2,6,23,0.10)",
+                  }}
+                >
+                  <div>{d.label}</div>
+                  <div style={styles.tableRight}>{d.planejadas}</div>
+                  <div style={styles.tableRight}>{d.finalizadas}</div>
+                  <div style={styles.tableRight}>{d.taxa.toFixed(1)}%</div>
+                  <div style={styles.tableRight}>{formatSeconds(d.tempoExecSeg)}</div>
+                </div>
+              ))}
+            </div>
+
             {/* Detalhe por dia (tabela) */}
             <div style={styles.table}>
               <div style={styles.tableHeader}>
@@ -645,7 +764,7 @@ export const KpiPageV14: React.FC<Props> = ({ perfil }) => {
                 <div style={styles.tableRight}>Tempo Exec.</div>
               </div>
 
-              {detalheDias.map((d, idx) => {
+              {detalheOrdenado.map((d, idx) => {
                 const date = new Date(`${d.dia}T00:00:00`);
                 const label = date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
                 return (
@@ -666,6 +785,13 @@ export const KpiPageV14: React.FC<Props> = ({ perfil }) => {
             </div>
 
             <div style={{ gridColumn: "span 12", fontSize: 11, color: theme.colors.textMuted ?? "#9ca3af" }}>
+              <button
+                type="button"
+                onClick={exportDetalhe}
+                style={{ ...styles.chipBtn, borderRadius: 10, padding: "6px 10px", marginRight: 8 }}
+              >
+                Exportar CSV (detalhe por dia)
+              </button>
               Observações: Tempo executado só conta quando <strong>finalizado_em</strong> existe. Tempo programado usa{" "}
               <strong>duracao_minutos</strong> e quando estiver null assume <strong>30 minutos</strong>.
             </div>
@@ -677,3 +803,4 @@ export const KpiPageV14: React.FC<Props> = ({ perfil }) => {
 };
 
 export default KpiPageV14;
+

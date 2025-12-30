@@ -112,6 +112,7 @@ export function N1CreateRotina({ perfil }: Props) {
   // campos editáveis
   const [duracaoMinutos, setDuracaoMinutos] = useState("30"); // default 30
   const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
   const [horarioInicio, setHorarioInicio] = useState("08:00");
   const [usuarios, setUsuarios] = useState<UsuarioOption[]>([]);
   const [responsavelId, setResponsavelId] = useState<string>("");
@@ -426,6 +427,7 @@ export function N1CreateRotina({ perfil }: Props) {
             descricao: descricaoEfetiva,
             dia_semana: dia,
             data_inicio: dataParaInserir,
+            data_fim: toISODate(dataFim),
             horario_inicio: horarioInicio || null,
             tem_checklist: flagsEfetivas.temChecklist,
             tem_anexo: flagsEfetivas.temAnexo,
@@ -477,6 +479,7 @@ export function N1CreateRotina({ perfil }: Props) {
       setPeriodicidade("diaria");
       setDiasSemana(["2"]);
       setDataInicio("");
+      setDataFim("");
       setHorarioInicio("08:00");
       setTemChecklist(false);
       setTemAnexo(false);
@@ -755,7 +758,7 @@ export function N1CreateRotina({ perfil }: Props) {
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
           <div>
             <label style={styles.label}>Data de início (opcional)</label>
             <input
@@ -764,6 +767,16 @@ export function N1CreateRotina({ perfil }: Props) {
               onChange={(e) => setDataInicio(e.target.value)}
               style={styles.input}
               min={todayISO()}
+            />
+          </div>
+          <div>
+            <label style={styles.label}>Data de fim (opcional)</label>
+            <input
+              type="date"
+              value={dataFim}
+              onChange={(e) => setDataFim(e.target.value)}
+              style={styles.input}
+              min={dataInicio || todayISO()}
             />
           </div>
           <div>

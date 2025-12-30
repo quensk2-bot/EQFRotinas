@@ -1,4 +1,4 @@
-// src/components/MainShellV14.tsx
+﻿// src/components/MainShellV14.tsx
 import type React from "react";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { Usuario } from "../types";
@@ -20,13 +20,15 @@ import { N1CreateRotina } from "./N1CreateRotina";
 
 // ✅ KPI NOVO
 import KpiPageV14 from "./KpiPageV14";
+import KpiAuditoria from "./KpiAuditoria";
+import RotinasAtivasAdmin from "./RotinasAtivasAdmin";
 
 type Props = {
   perfil: Usuario;
   onLogout: () => void;
 };
 
-type MenuKey = "overview" | "rotinas" | "agenda" | "kpi" | "execucao" | "modelos";
+type MenuKey = "overview" | "rotinas" | "agenda" | "kpi" | "kpi-auditoria" | "rotinas-ativas" | "execucao" | "modelos";
 
 type DashPeriodo = "HOJE" | "7D" | "30D";
 
@@ -413,6 +415,8 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
         ["rotinas", "Rotinas & Execução"],
         ["agenda", "Agenda do dia"],
         ["kpi", "KPI"],
+        ["kpi-auditoria", "KPI Auditoria"],
+        ["rotinas-ativas", "Rotinas ativas"],
         ["execucao", "Execução ao vivo"],
         ["modelos", "Modelos de rotina"],
       ] as [MenuKey, string][];
@@ -424,6 +428,8 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
         ["rotinas", "Rotinas & Execução"],
         ["agenda", "Agenda do dia"],
         ["kpi", "KPI"],
+        ["kpi-auditoria", "KPI Auditoria"],
+        ["rotinas-ativas", "Rotinas ativas"],
         ["execucao", "Execução ao vivo"],
       ] as [MenuKey, string][];
     }
@@ -978,10 +984,26 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
   );
   // ✅ KPI NOVO (N1/N2/N3)
   // Agora o menu KPI aponta para o KpiPageV14 (individual/regional/nacional conforme perfil)
-  const renderKpi = () => (
+const renderKpi = () => (
     <div style={gridSingleN3}>
       <div style={cardStyleN3}>
         <KpiPageV14 perfil={perfil} />
+      </div>
+    </div>
+  );
+
+const renderKpiAuditoria = () => (
+    <div style={gridSingleN3}>
+      <div style={cardStyleN3}>
+        <KpiAuditoria perfil={perfil} />
+      </div>
+    </div>
+  );
+
+const renderRotinasAtivas = () => (
+    <div style={gridSingleN3}>
+      <div style={cardStyleN3}>
+        <RotinasAtivasAdmin perfil={perfil} />
       </div>
     </div>
   );
@@ -1050,6 +1072,8 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
         {menu === "rotinas" && renderRotinas()}
         {menu === "agenda" && renderAgenda()}
         {menu === "kpi" && renderKpi()}
+        {menu === "kpi-auditoria" && renderKpiAuditoria()}
+        {menu === "rotinas-ativas" && renderRotinasAtivas()}
         {menu === "execucao" && renderExecucaoAoVivo()}
         {menu === "modelos" && perfil.nivel === "N1" && renderModelos()}
 
@@ -1069,3 +1093,4 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
 };
 
 export default MainShellV14;
+
