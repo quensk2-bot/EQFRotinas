@@ -1,5 +1,5 @@
 // src/components/ExecucaoModal.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { styles } from "../styles";
 import { HistoricoExecucoesRotina } from "./HistoricoExecucoesRotina";
@@ -67,6 +67,41 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [verHistorico, setVerHistorico] = useState(false);
+  const execRef = useRef<Execucao | null>(null);
+  const [lastSyncAt, setLastSyncAt] = useState<number>(0);
+
+  // sincroniza execuÇõÇœo ao voltar para a aba para evitar saltos do cronÇïmetro
+  useEffect(() => {
+    if (!open) return;
+    const onVisible = async () => {
+      if (document.visibilityState !== "visible") {
+        const ex = execRef.current;
+        if (ex && ex.inicio_em && !ex.pausado_em) {
+          const base = ex.duracao_total_segundos ?? 0;
+          const diff = Math.max(0, Math.floor((Date.now() - new Date(ex.inicio_em).getTime()) / 1000));
+          ex.duracao_total_segundos = base + diff;
+          ex.inicio_em = null;
+          execRef.current = { ...ex };
+          setExecucao(execRef.current);
+          setCronometro(segundosParaHHMMSS(ex.duracao_total_segundos));
+        }
+        if (intervalId) {
+          clearInterval(intervalId);
+          setIntervalId(null);
+        }
+        return;
+      }
+      const now = Date.now();
+      if (now - lastSyncAt < 800) return;
+      setLastSyncAt(now);
+      await carregarExecucao();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // ----------------------------------
   // CARREGAR ROTINA
@@ -113,11 +148,12 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
     }
 
     if (data) {
-      setExecucao(data as Execucao);
+      execRef.current = data as Execucao;
+      setExecucao(execRef.current);
       setObservacao(data.observacao ?? "");
 
       if (data.inicio_em && !data.finalizado_em) {
-        iniciarCronometro(data as Execucao);
+        iniciarCronometro();
       } else if (data.duracao_total_segundos) {
         setCronometro(segundosParaHHMMSS(data.duracao_total_segundos));
       }
@@ -151,8 +187,9 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
     }
 
     const nova = data as Execucao;
+    execRef.current = nova;
     setExecucao(nova);
-    iniciarCronometro(nova);
+    iniciarCronometro();
   };
 
   // ----------------------------------
@@ -273,21 +310,24 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
   // CRONÃ”METRO
   // ----------------------------------
   const iniciarCronometro = (ex: Execucao) => {
-    if (!ex.inicio_em || ex.finalizado_em) return;
-
     if (intervalId) {
       clearInterval(intervalId);
     }
 
-    const inicio = new Date(ex.inicio_em).getTime();
+    const atualizar = () => {
+      const base = ex.duracao_total_segundos ?? 0;
+      // finalizada ou pausada -> sÃ³ mostra base
+      if (ex.finalizado_em || ex.pausado_em || !ex.inicio_em) {
+        setCronometro(segundosParaHHMMSS(base));
+        return;
+      }
+      const inicioMs = new Date(ex.inicio_em).getTime();
+      const diffSeg = Math.max(0, Math.floor((Date.now() - inicioMs) / 1000));
+      setCronometro(segundosParaHHMMSS(base + diffSeg));
+    };
 
-    const t = window.setInterval(() => {
-      const agora = Date.now();
-      const diffSeg = Math.floor((agora - inicio) / 1000);
-
-      setCronometro(segundosParaHHMMSS(diffSeg));
-    }, 1000);
-
+    atualizar();
+    const t = window.setInterval(atualizar, 1000);
     setIntervalId(t);
   };
 
@@ -300,6 +340,19 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
     }
   }, [execucao, intervalId]);
 
+  // limpa o cronÃ´metro quando modal fecha ou ao desmontar
+  useEffect(() => {
+    if (!open && intervalId) {
+      clearInterval(intervalId);
+      setIntervalId(null);
+    }
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [open, intervalId]);
+
   // ----------------------------------
   // PAUSAR / CONTINUAR
   // ----------------------------------
@@ -309,11 +362,21 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
     const agoraIso = new Date().toISOString();
 
     if (!execucao.pausado_em) {
+      // calcular quanto jÃ¡ passou desde inÃ­cio atual
+      let total = execucao.duracao_total_segundos ?? 0;
+      if (execucao.inicio_em) {
+        const diff = Math.max(
+          0,
+          Math.floor((Date.now() - new Date(execucao.inicio_em).getTime()) / 1000)
+        );
+        total += diff;
+      }
+
       const { data, error } = await supabase
         .from("rotina_execucoes")
         .update({
           pausado_em: agoraIso,
-          status: "pausado",
+          duracao_total_segundos: total,
         })
         .eq("id", execucao.id)
         .select("*")
@@ -325,18 +388,21 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
         return;
       }
 
-      setExecucao(data as Execucao);
+      execRef.current = data as Execucao;
+      setExecucao(execRef.current);
 
       if (intervalId) {
         clearInterval(intervalId);
         setIntervalId(null);
       }
     } else {
+      const total = execucao.duracao_total_segundos ?? 0;
       const { data, error } = await supabase
         .from("rotina_execucoes")
         .update({
           pausado_em: null,
-          status: "em_execucao",
+          inicio_em: agoraIso,
+          duracao_total_segundos: total,
         })
         .eq("id", execucao.id)
         .select("*")
@@ -349,8 +415,9 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
       }
 
       const nova = data as Execucao;
+      execRef.current = nova;
       setExecucao(nova);
-      iniciarCronometro(nova);
+      iniciarCronometro();
     }
   };
 
@@ -365,12 +432,12 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
     try {
       const agora = new Date();
       let duracaoSegundos = execucao.duracao_total_segundos ?? 0;
-
-      if (execucao.inicio_em) {
-        const inicio = new Date(execucao.inicio_em).getTime();
-        const agoraMs = agora.getTime();
-        const diff = Math.floor((agoraMs - inicio) / 1000);
-        duracaoSegundos = diff;
+      if (execucao.inicio_em && !execucao.pausado_em) {
+        const diff = Math.max(
+          0,
+          Math.floor((agora.getTime() - new Date(execucao.inicio_em).getTime()) / 1000)
+        );
+        duracaoSegundos += diff;
       }
 
       const { data, error } = await supabase
@@ -392,7 +459,8 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
         return;
       }
 
-      setExecucao(data as Execucao);
+      execRef.current = data as Execucao;
+      setExecucao(execRef.current);
 
       if (intervalId) {
         clearInterval(intervalId);
@@ -413,6 +481,7 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
     if (!open) return;
 
     setErro(null);
+    execRef.current = null;
     setExecucao(null);
     setCronometro("00:00:00");
     setChecklist([]);
@@ -765,3 +834,4 @@ function segundosParaHHMMSS(totalSegundos: number): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(horas)}:${pad(minutos)}:${pad(segundos)}`;
 }
+

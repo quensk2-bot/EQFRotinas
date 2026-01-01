@@ -517,22 +517,35 @@ export const MainShellV14: React.FC<Props> = ({ perfil, onLogout }) => {
 
   // reabrir automaticamente o card de execucao ao entrar na agenda se houver rotina selecionada ou armazenada
   useEffect(() => {
-    const stored = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_EXEC_KEY) : null;
-    if (!rotinaSelecionada && stored) {
+    const raw = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_EXEC_KEY) : null;
+    let stored: { rotinaId: string; executorId: string } | null = null;
+    try {
+      stored = raw ? JSON.parse(raw) : null;
+    } catch {
+      stored = null;
+    }
+
+    const storedRotinaId = stored?.rotinaId;
+    const storedExecutorId = stored?.executorId;
+
+    if (!rotinaSelecionada && storedRotinaId && storedExecutorId === perfil.id) {
       void supabase
         .from("rotinas")
         .select("*")
-        .eq("id", stored)
+        .eq("id", storedRotinaId)
         .maybeSingle()
         .then(({ data }) => {
           if (data) setRotinaSelecionada(data as any);
         })
-        .catch(() => {});
+        .catch(() => {
+          window.localStorage.removeItem(STORAGE_EXEC_KEY);
+        });
     }
-    if (menu === "agenda" && (rotinaSelecionada || stored)) {
+
+    if (menu === "agenda" && (rotinaSelecionada || storedRotinaId)) {
       setExecOpen(true);
     }
-  }, [menu, rotinaSelecionada]);
+  }, [menu, rotinaSelecionada, perfil.id, supabase]);
 
   // reabrir automaticamente o card de execucao quando estiver na Agenda e houver rotina selecionada
   useEffect(() => {
