@@ -70,7 +70,7 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
   const execRef = useRef<Execucao | null>(null);
   const [lastSyncAt, setLastSyncAt] = useState<number>(0);
 
-  // sincroniza execu«ı«úo ao voltar para a aba para evitar saltos do cron«Ômetro
+  // sincroniza execuÔøΩÔøΩ«úo ao voltar para a aba para evitar saltos do cronÔøΩÔøΩmetro
   useEffect(() => {
     if (!open) return;
     const onVisible = async () => {
@@ -98,8 +98,6 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -388,6 +386,20 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
         return;
       }
 
+      if (rotina?.tipo === "avulsa") {
+        const { error: rotinaError } = await supabase
+          .from("rotinas")
+          .update({ status: "finalizada" })
+          .eq("id", rotinaId);
+
+        if (rotinaError) {
+          console.error(rotinaError);
+          setErro("Erro ao finalizar rotina.");
+          setLoading(false);
+          return;
+        }
+      }
+
       execRef.current = data as Execucao;
       setExecucao(execRef.current);
 
@@ -440,12 +452,20 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
         duracaoSegundos += diff;
       }
 
+      const checklistExecucao = checklist.map((item) => ({
+        ordem: item.ordem,
+        descricao: item.descricao,
+        valor: checklistValores[item.id] ?? "",
+        concluido: item.concluido,
+      }));
+
       const { data, error } = await supabase
         .from("rotina_execucoes")
         .update({
           finalizado_em: agora.toISOString(),
           duracao_total_segundos: duracaoSegundos,
           observacao: observacao || null,
+          checklist_execucao: checklistExecucao,
           status: "finalizado",
         })
         .eq("id", execucao.id)
@@ -457,6 +477,20 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
         setErro("Erro ao finalizar execu√ß√£o.");
         setLoading(false);
         return;
+      }
+
+      if (rotina?.tipo === "avulsa") {
+        const { error: rotinaError } = await supabase
+          .from("rotinas")
+          .update({ status: "finalizada" })
+          .eq("id", rotinaId);
+
+        if (rotinaError) {
+          console.error(rotinaError);
+          setErro("Erro ao finalizar rotina.");
+          setLoading(false);
+          return;
+        }
       }
 
       execRef.current = data as Execucao;
