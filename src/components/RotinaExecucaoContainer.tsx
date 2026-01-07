@@ -562,6 +562,19 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
       return;
     }
 
+    if ((rotina as any)?.tipo === "avulsa") {
+      const { error: rotinaError } = await supabase
+        .from("rotinas")
+        .update({ status: "finalizada" })
+        .eq("id", rotina.id);
+
+      if (rotinaError) {
+        console.error("Erro ao finalizar rotina (rotinas):", rotinaError);
+        alert("Erro ao finalizar rotina. Tente novamente.");
+        return;
+      }
+    }
+
     setIsFinalizada(true);
     setIsPaused(true);
     baseAcumuladaRef.current = total;
