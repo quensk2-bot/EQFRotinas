@@ -1,10 +1,11 @@
-// src/components/RotinaExecucaoContainer.tsx
+// Cronômetro estável + execução de rotina
+// Reescrito com reancoragem do tempo a cada salvamento
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { theme } from "../styles";
 import type { Rotina, Usuario } from "../types";
 
-type RotinaExecucaoContainerProps = {
+type Props = {
   open: boolean;
   rotina: Rotina | null;
   perfil: Usuario;
@@ -63,58 +64,6 @@ const headerRowStyle: React.CSSProperties = {
   marginBottom: 12,
 };
 
-const tituloStyle: React.CSSProperties = { fontSize: 20, fontWeight: 700 };
-const rotinaIdStyle: React.CSSProperties = { fontSize: 11, color: textMuted };
-
-const headerRightStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 10,
-  flexWrap: "wrap",
-  justifyContent: "flex-end",
-};
-
-const badgeBase: React.CSSProperties = {
-  padding: "4px 10px",
-  borderRadius: 999,
-  fontSize: 11,
-  border: `1px solid ${borderSoft}`,
-};
-
-const readOnlyBadgeStyle: React.CSSProperties = {
-  ...badgeBase,
-  background: "rgba(148,163,184,0.15)",
-  color: "#e5e7eb",
-};
-
-const cronometroStyle: React.CSSProperties = {
-  fontFamily: "monospace",
-  fontSize: 20,
-  fontWeight: 700,
-};
-
-const btnNeonStyle: React.CSSProperties = {
-  borderRadius: 999,
-  border: "none",
-  padding: "6px 14px",
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: "pointer",
-};
-
-const btnMinimizarStyle: React.CSSProperties = {
-  ...btnNeonStyle,
-  background: "transparent",
-  border: `1px solid ${neon}`,
-  color: neon,
-};
-
-const btnFecharStyle: React.CSSProperties = {
-  ...btnNeonStyle,
-  background: "#991b1b",
-  color: "#fee2e2",
-};
-
 const bodyGridStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "minmax(0, 1.3fr) minmax(0, 1fr)",
@@ -133,71 +82,6 @@ const colunaStyle: React.CSSProperties = {
   minHeight: 0,
 };
 
-const colunaTitleStyle: React.CSSProperties = {
-  fontSize: 14,
-  fontWeight: 600,
-  marginBottom: 8,
-};
-
-const downloadLinkStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  fontSize: 12,
-  color: theme.colors.neonGreen ?? "#22c55e",
-  textDecoration: "none",
-  border: `1px solid ${borderSoft}`,
-  padding: "6px 10px",
-  borderRadius: 10,
-};
-
-const checklistListStyle: React.CSSProperties = {
-  flex: 1,
-  overflowY: "auto",
-  paddingRight: 4,
-};
-
-const checklistRowStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "24px minmax(0, 1.6fr) minmax(0, 0.8fr)",
-  alignItems: "center",
-  gap: 8,
-  marginBottom: 8,
-  fontSize: 13,
-};
-
-const checklistTextStyle: React.CSSProperties = {
-  background: "rgba(15,23,42,1)",
-  borderRadius: 10,
-  border: `1px solid ${borderSoft}`,
-  padding: "6px 8px",
-  color: text,
-  fontSize: 13,
-};
-
-const checklistValorInputStyle: React.CSSProperties = {
-  background: "rgba(15,23,42,1)",
-  borderRadius: 10,
-  border: `1px solid ${borderSoft}`,
-  padding: "6px 8px",
-  color: text,
-  fontSize: 13,
-  textAlign: "right",
-  fontVariantNumeric: "tabular-nums",
-};
-
-const textareaStyle: React.CSSProperties = {
-  flex: 1,
-  background: "rgba(15,23,42,1)",
-  borderRadius: 12,
-  border: `1px solid ${borderSoft}`,
-  padding: 10,
-  color: text,
-  fontSize: 13,
-  resize: "none",
-  minHeight: 120,
-};
-
 const footerRowStyle: React.CSSProperties = {
   marginTop: 12,
   display: "flex",
@@ -206,132 +90,96 @@ const footerRowStyle: React.CSSProperties = {
   gap: 12,
 };
 
-const btnPausarStyle: React.CSSProperties = { ...btnNeonStyle, background: "#f97316", color: "#111827" };
-const btnFinalizarStyle: React.CSSProperties = { ...btnNeonStyle, background: "#dc2626", color: "#fee2e2" };
-const footerInfoStyle: React.CSSProperties = { fontSize: 12, color: textMuted };
-
-const floatingPanelStyle: React.CSSProperties = {
-  position: "fixed",
-  right: 20,
-  bottom: 20,
-  width: 320,
-  background: "rgba(15,23,42,0.98)",
-  borderRadius: 16,
-  border: `1px solid ${neon}`,
-  boxShadow: "0 0 25px rgba(34,197,94,0.35)",
-  padding: 12,
-  zIndex: 40,
+const badgeBase: React.CSSProperties = {
+  padding: "4px 10px",
+  borderRadius: 999,
+  fontSize: 11,
+  border: `1px solid ${borderSoft}`,
 };
 
-const floatingTitleStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600, marginBottom: 4 };
-const floatingRowStyle: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 };
-const floatingTimeStyle: React.CSSProperties = { fontFamily: "monospace", fontSize: 14 };
-const floatingButtonsStyle: React.CSSProperties = { display: "flex", gap: 6 };
-
-const btnRetomarStyle: React.CSSProperties = { ...btnNeonStyle, padding: "4px 10px", background: neon, color: "#000" };
-const btnFinalizarMiniStyle: React.CSSProperties = { ...btnNeonStyle, padding: "4px 10px", background: "#dc2626", color: "#fee2e2" };
-
-const anexosListStyle: React.CSSProperties = { marginTop: 8, maxHeight: 130, overflowY: "auto", fontSize: 12 };
-const anexosItemStyle: React.CSSProperties = {
+const tituloStyle: React.CSSProperties = { fontSize: 20, fontWeight: 700 };
+const rotinaIdStyle: React.CSSProperties = { fontSize: 11, color: textMuted };
+const headerRightStyle: React.CSSProperties = {
   display: "flex",
-  justifyContent: "space-between",
   alignItems: "center",
-  gap: 8,
-  padding: "4px 0",
-  borderBottom: `1px solid ${borderSoft}`,
+  gap: 10,
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
 };
 
-function formatSeconds(total: number): string {
+const cronometroStyle: React.CSSProperties = {
+  fontFamily: "monospace",
+  fontSize: 20,
+  fontWeight: 700,
+};
+
+const btnNeonStyle: React.CSSProperties = {
+  borderRadius: 999,
+  border: "none",
+  padding: "6px 14px",
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: "pointer",
+};
+
+const formatSeconds = (total: number) => {
   const t = Math.max(0, Math.floor(total));
   const h = Math.floor(t / 3600);
   const m = Math.floor((t % 3600) / 60);
   const s = t % 60;
   if (h > 0) return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
+};
 
-// ✅ helpers "dia local" para evitar pegar execução antiga
-function ymdLocal(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-function startOfDayLocalToUTC(dateISO: string): string {
-  return new Date(`${dateISO}T00:00:00`).toISOString();
-}
-function endOfDayLocalToUTCExclusive(dateISO: string): string {
-  const d = new Date(`${dateISO}T00:00:00`);
-  d.setDate(d.getDate() + 1);
-  return d.toISOString();
-}
-
-export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinalizada }: RotinaExecucaoContainerProps) {
+export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinalizada }: Props) {
   const [isMinimized, setIsMinimized] = useState(false);
-
   const [isPaused, setIsPaused] = useState(false);
   const [isFinalizada, setIsFinalizada] = useState(false);
-
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-
   const [observacoes, setObservacoes] = useState("");
   const [checklist, setChecklist] = useState<ChecklistItemExec[]>([]);
-
   const [execucaoId, setExecucaoId] = useState<number | null>(null);
   const [executorId, setExecutorId] = useState<string | null>(null);
-
   const [anexos, setAnexos] = useState<Anexo[]>([]);
   const [uploading, setUploading] = useState(false);
   const [erroUpload, setErroUpload] = useState<string | null>(null);
-
   const [loadingInicial, setLoadingInicial] = useState(false);
   const [erroInicial, setErroInicial] = useState<string | null>(null);
 
-  // ✅ refs para cálculo do cronômetro (CORRIGIDO: fonte única = Date.now + inicioRodandoRef)
-  const baseAcumuladaRef = useRef<number>(0);          // segundos acumulados (salvos / pausas)
-  const inicioRodandoRef = useRef<string | null>(null); // ISO do início do trecho rodando
+  // cronômetro: base acumulada (s) + início do trecho corrido (ISO)
+  const baseAcumuladaRef = useRef(0);
+  const inicioRodandoRef = useRef<string | null>(null);
   const tickTimerRef = useRef<number | null>(null);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ✅ Permissão por hierarquia (VIEW)
   const canView = useMemo(() => {
     if (!rotina) return false;
-
-    if (perfil.nivel === "N3") {
-      return rotina.responsavel_id === perfil.id;
-    }
-
+    if (perfil.nivel === "N3") return rotina.responsavel_id === perfil.id;
     if (perfil.nivel === "N2") {
       const okDep = perfil.departamento_id == null || rotina.departamento_id === perfil.departamento_id;
       const okSet = perfil.setor_id == null || rotina.setor_id === perfil.setor_id;
       const okReg = perfil.regional_id == null || rotina.regional_id === perfil.regional_id;
       return okDep && okSet && okReg;
     }
-
-    // N1: gestor (vê do setor/departamento)
+    // N1
     const okDep = perfil.departamento_id == null || rotina.departamento_id === perfil.departamento_id;
     const okSet = perfil.setor_id == null || rotina.setor_id === perfil.setor_id;
     return okDep && okSet;
   }, [perfil, rotina]);
 
-  // ✅ EDIT: só executa quem é responsável
   const canEdit = useMemo(() => {
     if (!rotina) return false;
     return rotina.responsavel_id === perfil.id;
-  }, [perfil.id, rotina]);
+  }, [rotina, perfil.id]);
 
   const isReadOnly = useMemo(() => !canEdit, [canEdit]);
-  const lastInitKeyRef = useRef<string>("");
 
-  // ✅ calcula tempo atual: base acumulada + (agora - inicioRodando)
   const computeTotalSeconds = () => {
     const base = baseAcumuladaRef.current || 0;
     const startISO = inicioRodandoRef.current;
     if (!startISO) return base;
-
     const startMs = new Date(startISO).getTime();
     if (Number.isNaN(startMs)) return base;
-
     const diff = Math.floor((Date.now() - startMs) / 1000);
     return base + Math.max(0, diff);
   };
@@ -342,7 +190,6 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
     return total;
   };
 
-  // ✅ ticker apenas redesenha (não tenta “corrigir” por visibilidade)
   const startTicker = () => {
     if (tickTimerRef.current != null) window.clearInterval(tickTimerRef.current);
     tickTimerRef.current = window.setInterval(() => {
@@ -356,7 +203,7 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
     tickTimerRef.current = null;
   };
 
-  // ✅ liga/desliga ticker conforme estado (sem visibilitychange)
+  // liga/desliga ticker conforme estado
   useEffect(() => {
     if (!open) {
       stopTicker();
@@ -371,18 +218,14 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isPaused, isFinalizada]);
 
+  // init
   useEffect(() => {
     if (!open || !rotina) return;
-
-    const initKey = `${rotina.id}::${perfil.id}::${isReadOnly ? "RO" : "RW"}`;
-    if (lastInitKeyRef.current === initKey) return;
-    lastInitKeyRef.current = initKey;
 
     const init = async () => {
       setIsMinimized(false);
       setErroInicial(null);
       setLoadingInicial(true);
-
       setExecucaoId(null);
       setExecutorId(null);
       setIsPaused(false);
@@ -391,7 +234,6 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
       setObservacoes("");
       setChecklist([]);
       setAnexos([]);
-
       baseAcumuladaRef.current = 0;
       inicioRodandoRef.current = null;
 
@@ -410,7 +252,7 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
         const uid = userData.user.id;
         setExecutorId(uid);
 
-        // ✅ checklist base: tenta tabela
+        // checklist base
         const { data: itensChecklist, error: checklistErr } = await supabase
           .from("rotina_checklist")
           .select("ordem, descricao")
@@ -418,7 +260,6 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
           .order("ordem", { ascending: true });
 
         if (checklistErr) {
-          console.error("Erro ao carregar checklist da rotina:", checklistErr);
           setErroInicial("Erro ao carregar checklist da rotina.");
           return;
         }
@@ -435,15 +276,18 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
           baseChecklist = [{ ordem: 1, descricao: rotina.titulo ?? "Etapa principal", valor: "", concluido: false }];
         }
 
-        // ✅ EXECUÇÃO DO DIA
-        const hojeISO = ymdLocal(new Date());
-        const di = startOfDayLocalToUTC(hojeISO);
-        const df = endOfDayLocalToUTCExclusive(hojeISO);
+        // execução do dia
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const di = today.toISOString();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
+        const df = tomorrow.toISOString();
 
         let execRow: any | null = null;
 
         if (isReadOnly) {
-          const { data: execsRO, error: execErrRO } = await supabase
+          const { data: execsRO } = await supabase
             .from("rotina_execucoes")
             .select("id, inicio_em, pausado_em, finalizado_em, duracao_total_segundos, observacoes, checklist_execucao")
             .eq("rotina_id", rotina.id)
@@ -451,14 +295,9 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
             .lt("created_at", df)
             .order("id", { ascending: false })
             .limit(1);
-
-          if (execErrRO) {
-            console.error("Erro ao carregar execução (RO dia):", execErrRO);
-          } else {
-            execRow = execsRO?.[0] ?? null;
-          }
+          execRow = execsRO?.[0] ?? null;
         } else {
-          const { data: execs, error: execErr } = await supabase
+          const { data: execs } = await supabase
             .from("rotina_execucoes")
             .select("id, inicio_em, pausado_em, finalizado_em, duracao_total_segundos, observacoes, checklist_execucao")
             .eq("rotina_id", rotina.id)
@@ -467,20 +306,11 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
             .lt("created_at", df)
             .order("id", { ascending: false })
             .limit(1);
-
-          if (execErr) {
-            console.error("Erro ao carregar execução (dia):", execErr);
-            setErroInicial("Erro ao carregar dados de execução.");
-            return;
-          }
-
           execRow = execs?.[0] ?? null;
 
-          // ✅ cria execução automaticamente AO ABRIR se não existir hoje
           if (!execRow) {
             const nowISO = new Date().toISOString();
-
-            const { data: created, error: createErr } = await supabase
+            const { data: created } = await supabase
               .from("rotina_execucoes")
               .insert({
                 rotina_id: rotina.id,
@@ -494,12 +324,6 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
               })
               .select("id, inicio_em, pausado_em, finalizado_em, duracao_total_segundos, observacoes, checklist_execucao")
               .single();
-
-            if (createErr || !created) {
-              console.error("Erro ao criar execução:", createErr);
-              setErroInicial("Erro ao iniciar execução da rotina.");
-              return;
-            }
             execRow = created;
           }
         }
@@ -508,7 +332,6 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
 
         const finalizada = !!execRow?.finalizado_em;
         const pausada = !!execRow?.pausado_em;
-
         setIsFinalizada(finalizada);
         setIsPaused(finalizada ? true : pausada);
 
@@ -524,7 +347,6 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
         recalcElapsed();
 
         setObservacoes(execRow?.observacoes ?? "");
-
         let checklistExec: ChecklistItemExec[] = baseChecklist;
         if (execRow?.checklist_execucao && Array.isArray(execRow.checklist_execucao)) {
           checklistExec = execRow.checklist_execucao.map((i: any) => ({
@@ -536,16 +358,14 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
         }
         setChecklist(checklistExec);
 
-        // ✅ anexos (por execução do dia)
         if (execRow?.id) {
-          const { data: anexoRows, error: anexoErr } = await supabase
+          const { data: anexoRows } = await supabase
             .from("rotina_anexos")
             .select("id, storage_path, descricao, created_at")
             .eq("rotina_id", rotina.id)
             .eq("execucao_id", execRow.id)
             .order("created_at", { ascending: false });
-
-          if (!anexoErr && anexoRows) setAnexos(anexoRows as Anexo[]);
+          if (anexoRows) setAnexos(anexoRows as Anexo[]);
         }
       } catch (e: any) {
         console.error("Erro inesperado na inicialização da execução:", e);
@@ -559,30 +379,45 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, rotina?.id, perfil.id, isReadOnly, canView]);
 
-  // ✅ salva tempo contínuo (a cada 5s) usando o tempo correto calculado na hora
+  // salva tempo contínuo (a cada 5s) reancorando quando está rodando
   useEffect(() => {
     if (!execucaoId || isReadOnly) return;
 
     const interval = setInterval(async () => {
-      const total = (!isPaused && !isFinalizada) ? computeTotalSeconds() : elapsedSeconds;
-      setElapsedSeconds(total);
+      const nowISO = new Date().toISOString();
 
-      const { error } = await supabase
+      if (!isPaused && !isFinalizada) {
+        const total = computeTotalSeconds();
+        baseAcumuladaRef.current = total;
+        inicioRodandoRef.current = nowISO;
+        setElapsedSeconds(total);
+
+        const { error } = await supabase
+          .from("rotina_execucoes")
+          .update({ duracao_total_segundos: total, inicio_em: nowISO })
+          .eq("id", execucaoId);
+
+        if (error) console.error("Erro ao salvar tempo contínuo:", error);
+        return;
+      }
+
+      const { error: errSave } = await supabase
         .from("rotina_execucoes")
-        .update({ duracao_total_segundos: total })
+        .update({ duracao_total_segundos: elapsedSeconds })
         .eq("id", execucaoId);
 
-      if (error) console.error("Erro ao salvar tempo contínuo:", error);
+      if (errSave) console.error("Erro ao salvar tempo contínuo (pausada/finalizada):", errSave);
     }, 5000);
 
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [execucaoId, isReadOnly, isPaused, isFinalizada]);
+  }, [execucaoId, isReadOnly, isPaused, isFinalizada, elapsedSeconds]);
 
+  // persistência ao desmontar
   useEffect(() => {
     return () => {
       if (execucaoId && !isFinalizada && !isReadOnly) {
-        const total = (!isPaused && !isFinalizada) ? computeTotalSeconds() : elapsedSeconds;
+        const total = !isPaused && !isFinalizada ? computeTotalSeconds() : elapsedSeconds;
         void supabase
           .from("rotina_execucoes")
           .update({
@@ -593,6 +428,7 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
           .eq("id", execucaoId);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [execucaoId, isFinalizada, isReadOnly, isPaused, elapsedSeconds, observacoes, checklist]);
 
   useEffect(() => {
@@ -610,13 +446,32 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
   const persistEstadoParcial = async (extra: Record<string, any> = {}) => {
     if (!execucaoId || isReadOnly) return;
 
-    const total = (!isPaused && !isFinalizada) ? computeTotalSeconds() : elapsedSeconds;
-    setElapsedSeconds(total);
+    if (!isPaused && !isFinalizada) {
+      const total = computeTotalSeconds();
+      const nowISO = new Date().toISOString();
+      baseAcumuladaRef.current = total;
+      inicioRodandoRef.current = nowISO;
+      setElapsedSeconds(total);
+
+      const { error } = await supabase
+        .from("rotina_execucoes")
+        .update({
+          duracao_total_segundos: total,
+          inicio_em: nowISO,
+          observacoes,
+          checklist_execucao: checklist,
+          ...extra,
+        })
+        .eq("id", execucaoId);
+
+      if (error) console.error("Erro ao salvar estado parcial:", error);
+      return;
+    }
 
     const { error } = await supabase
       .from("rotina_execucoes")
       .update({
-        duracao_total_segundos: total,
+        duracao_total_segundos: elapsedSeconds,
         observacoes,
         checklist_execucao: checklist,
         ...extra,
@@ -707,6 +562,19 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
       return;
     }
 
+    if ((rotina as any)?.tipo === "avulsa") {
+      const { error: rotinaError } = await supabase
+        .from("rotinas")
+        .update({ status: "finalizada" })
+        .eq("id", rotina.id);
+
+      if (rotinaError) {
+        console.error("Erro ao finalizar rotina (rotinas):", rotinaError);
+        alert("Erro ao finalizar rotina. Tente novamente.");
+        return;
+      }
+    }
+
     setIsFinalizada(true);
     setIsPaused(true);
     baseAcumuladaRef.current = total;
@@ -716,6 +584,19 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
   };
 
   if (!open || !rotina) return null;
+
+  const statusBadge = () => {
+    if (!execucaoId && isReadOnly) {
+      return <span style={{ ...badgeBase, background: "rgba(56,189,248,0.10)", color: "#7dd3fc" }}>Sem execução</span>;
+    }
+    if (isFinalizada) {
+      return <span style={{ ...badgeBase, background: "rgba(34,197,94,0.18)", color: "#4ade80" }}>Finalizada</span>;
+    }
+    if (isPaused) {
+      return <span style={{ ...badgeBase, background: "rgba(234,179,8,0.15)", color: "#facc15" }}>Pausada</span>;
+    }
+    return <span style={{ ...badgeBase, background: "rgba(34,197,94,0.12)", color: "#4ade80" }}>Em execução</span>;
+  };
 
   const handleToggleChecklistItem = (ordem: number) => {
     if (isFinalizada || isReadOnly) return;
@@ -746,7 +627,6 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
 
         const { error: upError } = await supabase.storage.from(bucket).upload(path, file);
         if (upError) {
-          console.error("Erro upload anexo:", upError);
           setErroUpload("Erro ao enviar um dos anexos.");
           continue;
         }
@@ -768,7 +648,6 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
 
       if (novos.length > 0) setAnexos((prev) => [...novos, ...prev]);
     } catch (err: any) {
-      console.error("Erro inesperado ao enviar anexos:", err);
       setErroUpload("Erro inesperado ao enviar anexos.");
     } finally {
       setUploading(false);
@@ -776,81 +655,97 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
     }
   };
 
-  const statusBadge = () => {
-    if (!execucaoId && isReadOnly) {
-      return <span style={{ ...badgeBase, background: "rgba(56,189,248,0.10)", color: "#7dd3fc" }}>Sem execução</span>;
-    }
-    if (isFinalizada) {
-      return <span style={{ ...badgeBase, background: "rgba(34,197,94,0.18)", color: "#4ade80" }}>Finalizada</span>;
-    }
-    if (isPaused) {
-      return <span style={{ ...badgeBase, background: "rgba(234,179,8,0.15)", color: "#facc15" }}>Pausada</span>;
-    }
-    return <span style={{ ...badgeBase, background: "rgba(34,197,94,0.12)", color: "#4ade80" }}>Em execução</span>;
-  };
-
   const modal = !isMinimized && (
     <div style={overlayStyle}>
       <div style={modalStyle}>
         <header style={headerRowStyle}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <div style={tituloStyle}>{rotina.titulo}</div>
-            <div style={rotinaIdStyle}>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{rotina.titulo}</div>
+            <div style={{ fontSize: 11, color: textMuted }}>
               ID: {rotina.id} • Duração planejada: {rotina.duracao_minutos ?? 0} min
             </div>
           </div>
 
-          <div style={headerRightStyle}>
-            {isReadOnly && <span style={readOnlyBadgeStyle}>Somente leitura</span>}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {isReadOnly && <span style={{ ...badgeBase, background: "rgba(148,163,184,0.15)", color: "#e5e7eb" }}>Somente leitura</span>}
             {statusBadge()}
-            <span style={cronometroStyle}>{formatSeconds(elapsedSeconds)}</span>
+            <span style={{ fontFamily: "monospace", fontSize: 20, fontWeight: 700 }}>{formatSeconds(elapsedSeconds)}</span>
 
-            <button type="button" style={btnMinimizarStyle} onClick={handleMinimizar}>
+            <button type="button" style={{ ...btnNeonStyle, background: "transparent", border: `1px solid ${neon}`, color: neon }} onClick={handleMinimizar}>
               Minimizar
             </button>
 
-            <button type="button" style={btnFecharStyle} onClick={handleFechar}>
+            <button type="button" style={{ ...btnNeonStyle, background: "#991b1b", color: "#fee2e2" }} onClick={handleFechar}>
               Fechar
             </button>
           </div>
         </header>
 
         {erroInicial ? (
-          <div style={{ padding: 12, borderRadius: 12, background: "rgba(220,38,38,0.18)", color: "#fecaca", fontSize: 13 }}>
-            {erroInicial}
-          </div>
+          <div style={{ padding: 12, borderRadius: 12, background: "rgba(220,38,38,0.18)", color: "#fecaca", fontSize: 13 }}>{erroInicial}</div>
         ) : loadingInicial ? (
           <div style={{ color: "#e5e7eb", fontSize: 13 }}>Carregando dados da execução...</div>
         ) : (
           <>
             <div style={bodyGridStyle}>
               <div style={colunaStyle}>
-                <div style={colunaTitleStyle}>Checklist da execução</div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Checklist da execução</div>
                 <div style={{ fontSize: 11, color: textMuted, marginBottom: 6 }}>
                   {isReadOnly ? "Visualização do checklist (somente leitura)." : "Marque o item concluído e registre o valor da conferência."}
                 </div>
 
                 {rotina?.arquivo_modelo_url && (
-                  <a href={rotina.arquivo_modelo_url} target="_blank" rel="noreferrer" style={downloadLinkStyle}>
+                  <a href={rotina.arquivo_modelo_url} target="_blank" rel="noreferrer" style={{
+                    display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: neon, textDecoration: "none",
+                    border: `1px solid ${borderSoft}`, padding: "6px 10px", borderRadius: 10,
+                  }}>
                     📄 Baixar anexo da rotina {rotina.arquivo_modelo_nome ? `(${rotina.arquivo_modelo_nome})` : ""}
                   </a>
                 )}
 
-                <div style={checklistListStyle}>
+                <div style={{ flex: 1, overflowY: "auto", paddingRight: 4 }}>
                   {checklist.map((item) => (
-                    <div key={item.ordem} style={checklistRowStyle}>
+                    <div
+                      key={item.ordem}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "24px minmax(0, 1.6fr) minmax(0, 0.8fr)",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 8,
+                        fontSize: 13,
+                      }}
+                    >
                       <input
                         type="checkbox"
                         checked={item.concluido}
                         disabled={isFinalizada || isReadOnly}
                         onChange={() => handleToggleChecklistItem(item.ordem)}
                       />
-                      <div style={checklistTextStyle}>
+                      <div
+                        style={{
+                          background: "rgba(15,23,42,1)",
+                          borderRadius: 10,
+                          border: `1px solid ${borderSoft}`,
+                          padding: "6px 8px",
+                          color: text,
+                          fontSize: 13,
+                        }}
+                      >
                         {item.descricao || <span style={{ color: "#64748b" }}>(sem descrição)</span>}
                       </div>
                       <input
                         type="text"
-                        style={checklistValorInputStyle}
+                        style={{
+                          background: "rgba(15,23,42,1)",
+                          borderRadius: 10,
+                          border: `1px solid ${borderSoft}`,
+                          padding: "6px 8px",
+                          color: text,
+                          fontSize: 13,
+                          textAlign: "right",
+                          fontVariantNumeric: "tabular-nums",
+                        }}
                         placeholder="Valor / Qtd"
                         value={item.valor}
                         disabled={isFinalizada || isReadOnly}
@@ -864,9 +759,19 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
               </div>
 
               <div style={colunaStyle}>
-                <div style={colunaTitleStyle}>Observações</div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Observações</div>
                 <textarea
-                  style={textareaStyle}
+                  style={{
+                    flex: 1,
+                    background: "rgba(15,23,42,1)",
+                    borderRadius: 12,
+                    border: `1px solid ${borderSoft}`,
+                    padding: 10,
+                    color: text,
+                    fontSize: 13,
+                    resize: "none",
+                    minHeight: 120,
+                  }}
                   placeholder="Registre divergências, ocorrências, observações importantes..."
                   value={observacoes}
                   disabled={isFinalizada || isReadOnly}
@@ -874,13 +779,13 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
                 />
 
                 <div style={{ marginTop: 12 }}>
-                  <div style={colunaTitleStyle}>Anexos da execução</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Anexos da execução</div>
                   <div style={{ fontSize: 11, color: textMuted, marginBottom: 4 }}>
                     {isReadOnly
                       ? "Visualização de anexos (somente leitura)."
                       : (rotina as any)?.tem_anexo
-                      ? "⚠️ Anexo obrigatório: envie pelo menos 1 arquivo para conseguir finalizar. (Múltiplos permitidos)"
-                      : "Envie fotos, prints ou documentos. Múltiplos arquivos são permitidos."}
+                        ? "⚠️ Anexo obrigatório: envie pelo menos 1 arquivo para conseguir finalizar. (Múltiplos permitidos)"
+                        : "Envie fotos, prints ou documentos. Múltiplos arquivos são permitidos."}
                   </div>
 
                   <input
@@ -894,14 +799,23 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
                   {erroUpload && <div style={{ fontSize: 11, color: "#fecaca", marginBottom: 4 }}>{erroUpload}</div>}
                   {uploading && <div style={{ fontSize: 11, color: "#e5e7eb", marginBottom: 4 }}>Enviando anexos...</div>}
 
-                  <div style={anexosListStyle}>
+                  <div style={{ marginTop: 8, maxHeight: 130, overflowY: "auto", fontSize: 12 }}>
                     {anexos.length === 0 && <div style={{ fontSize: 12, color: textMuted }}>Nenhum anexo enviado ainda.</div>}
 
                     {anexos.map((a) => {
                       const publicUrl = supabase.storage.from("rotina-anexos").getPublicUrl(a.storage_path).data.publicUrl ?? "#";
-
                       return (
-                        <div key={a.id} style={anexosItemStyle}>
+                        <div
+                          key={a.id}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "4px 0",
+                            borderBottom: `1px solid ${borderSoft}`,
+                          }}
+                        >
                           <a href={publicUrl} target="_blank" rel="noreferrer" style={{ color: neon, textDecoration: "none" }}>
                             ⬇ {a.descricao ?? "arquivo"}
                           </a>
@@ -915,7 +829,7 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
             </div>
 
             <footer style={footerRowStyle}>
-              <div style={footerInfoStyle}>
+              <div style={{ fontSize: 12, color: textMuted }}>
                 {isReadOnly
                   ? "Modo somente leitura: você pode visualizar checklist, tempo e anexos dentro da sua hierarquia."
                   : "O cronômetro registra o tempo total. Você pode pausar/minimizar sem perder o tempo. Ao finalizar, tudo fica salvo para auditoria."}
@@ -924,12 +838,12 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
               {!isReadOnly && (
                 <div style={{ display: "flex", gap: 8 }}>
                   {!isFinalizada && (
-                    <button type="button" style={btnPausarStyle} onClick={handlePausar}>
+                    <button type="button" style={{ ...btnNeonStyle, background: "#f97316", color: "#111827" }} onClick={handlePausar}>
                       {isPaused ? "Retomar" : "Pausar"}
                     </button>
                   )}
                   {!isFinalizada && (
-                    <button type="button" style={btnFinalizarStyle} onClick={handleFinalizar}>
+                    <button type="button" style={{ ...btnNeonStyle, background: "#dc2626", color: "#fee2e2" }} onClick={handleFinalizar}>
                       Finalizar rotina
                     </button>
                   )}
@@ -943,20 +857,32 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
   );
 
   const floating = isMinimized && (
-    <div style={floatingPanelStyle}>
-      <div style={floatingTitleStyle}>
+    <div
+      style={{
+        position: "fixed",
+        right: 20,
+        bottom: 20,
+        width: 320,
+        background: "rgba(15,23,42,0.98)",
+        borderRadius: 16,
+        border: `1px solid ${neon}`,
+        boxShadow: "0 0 25px rgba(34,197,94,0.35)",
+        padding: 12,
+        zIndex: 40,
+      }}
+    >
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
         {isReadOnly ? "Visualizando: " : "Em execução: "}
         <span style={{ color: neon }}>{rotina.titulo}</span>
       </div>
-      <div style={floatingRowStyle}>
-        <span style={floatingTimeStyle}>{formatSeconds(elapsedSeconds)}</span>
-        <div style={floatingButtonsStyle}>
-          <button type="button" style={btnRetomarStyle} onClick={() => setIsMinimized(false)}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontFamily: "monospace", fontSize: 14 }}>{formatSeconds(elapsedSeconds)}</span>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button type="button" style={{ ...btnNeonStyle, padding: "4px 10px", background: neon, color: "#000" }} onClick={() => setIsMinimized(false)}>
             Maximizar
           </button>
-
           {!isReadOnly && !isFinalizada && (
-            <button type="button" style={btnFinalizarMiniStyle} onClick={handleFinalizar}>
+            <button type="button" style={{ ...btnNeonStyle, padding: "4px 10px", background: "#dc2626", color: "#fee2e2" }} onClick={handleFinalizar}>
               Finalizar
             </button>
           )}
