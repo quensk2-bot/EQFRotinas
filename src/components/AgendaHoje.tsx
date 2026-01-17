@@ -31,6 +31,7 @@ type Rotina = {
   departamento_id: number | null;
   setor_id: number | null;
   regional_id: number | null;
+  grupo_id: number | null;
   tem_checklist: boolean;
   tem_anexo: boolean;
 };
@@ -52,6 +53,7 @@ type ItemAgenda = {
 
 type RegionalOption = { id: number; nome: string };
 type UsuarioOption = { id: string; nome: string };
+type GrupoOption = { id: number; nome: string; departamento_id: number; setor_id: number; regional_id: number | null; ativo: boolean };
 
 // Agenda vista: começa 06:00 e termina 00:00 (meia-noite no fim da lista)
 const horasDia = [...Array.from({ length: 18 }, (_, i) => i + 6), 0];
@@ -85,6 +87,27 @@ function dayOfMonth(dateISO: string): number {
   const d = new Date(`${dateISO}T00:00:00`);
   return d.getDate();
 }
+function matchDiaSemana(raw: string | null, dateISO: string): boolean {
+  if (!raw) return false;
+  const dow = weekday_1_7(dateISO);
+  const parts = String(raw)
+    .split(",")
+    .map((p) => p.trim().toLowerCase())
+    .filter((p) => p.length > 0)
+    .map((p) => {
+      if (/^[1-7]$/.test(p)) return p;
+      if (["domingo", "dom"].includes(p)) return "1";
+      if (["segunda", "seg"].includes(p)) return "2";
+      if (["terca", "ter"].includes(p)) return "3";
+      if (["quarta", "qua"].includes(p)) return "4";
+      if (["quinta", "qui"].includes(p)) return "5";
+      if (["sexta", "sex"].includes(p)) return "6";
+      if (["sabado", "sab"].includes(p)) return "7";
+      return "";
+    })
+    .filter((p) => p.length > 0);
+  return parts.includes(dow);
+}
 // 00:00 LOCAL -> UTC ISO (para filtrar created_at)
 function startOfDayLocalToUTC(dateISO: string): string {
   return new Date(`${dateISO}T00:00:00`).toISOString();
@@ -111,7 +134,6 @@ function buildAgendaDoDia(rotinasBase: Rotina[], dateISO: string) {
   const domAlvo = dayOfMonth(dateISO);
   const dow = weekday_1_7(dateISO);
   const dowNum = Number(dow); // 1=domingo, 7=sábado
-
   return rotinasBase.filter((r) => {
     if (r.data_fim && dateISO > r.data_fim) return false;
 
@@ -127,7 +149,7 @@ function buildAgendaDoDia(rotinasBase: Rotina[], dateISO: string) {
     }
 
     if (p === "semanal") {
-      return r.data_inicio <= dateISO && String(r.dia_semana ?? "") === dow;
+      return r.data_inicio <= dateISO && matchDiaSemana(r.dia_semana, dateISO);
     }
 
     if (p === "mensal") {
@@ -159,8 +181,10 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
   // ✅ filtros extras
   const [regionais, setRegionais] = useState<RegionalOption[]>([]);
   const [usuarios, setUsuarios] = useState<UsuarioOption[]>([]);
+  const [grupos, setGrupos] = useState<GrupoOption[]>([]);
   const [filtroRegional, setFiltroRegional] = useState<number | "todas">("todas"); // só N1
   const [filtroUsuario, setFiltroUsuario] = useState<string | "todos">("todos"); // N1 e N2
+  const [filtroGrupo, setFiltroGrupo] = useState<string | "todos">("todos"); // N1 e N2
 
   // ✅ mapa id->nome p/ exibir no card
   const [usuarioNomeMap, setUsuarioNomeMap] = useState<Record<string, string>>({});
@@ -209,6 +233,7 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
 
   // ✅ Carregar usuários para o select (N1/N2)
   // Regras:
+  // - exige grupo selecionado (filtroGrupo)
   // - N1: depto/setor + (se filtroRegional != todas) filtra por regional
   // - N2: depto/setor + regional FIXA do N2 (não vaza)
   useEffect(() => {
@@ -216,14 +241,21 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
 
     const loadUsuarios = async () => {
       try {
+        if (filtroGrupo === "todos") {
+          setUsuarios([]);
+          if (filtroUsuario !== "todos") setFiltroUsuario("todos");
+          return;
+        }
+
         let uq = supabase
           .from(USUARIOS_TABLE)
-          .select("id,nome,nivel,departamento_id,setor_id,regional_id,ativo")
+          .select("id,nome,nivel,departamento_id,setor_id,regional_id,grupo_id,ativo")
           .eq("ativo", true)
           .order("nome", { ascending: true });
 
         if (perfil.departamento_id) uq = uq.eq("departamento_id", perfil.departamento_id);
         if (perfil.setor_id) uq = uq.eq("setor_id", perfil.setor_id);
+        uq = uq.eq("grupo_id", Number(filtroGrupo));
 
         // ✅ N2: trava na própria regional
         if (perfil.nivel === "N2" && perfil.regional_id) uq = uq.eq("regional_id", perfil.regional_id);
@@ -257,7 +289,61 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
 
     void loadUsuarios();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [podeFiltrarUsuario, perfil.nivel, perfil.departamento_id, perfil.setor_id, perfil.regional_id, filtroRegional]);
+  }, [
+    podeFiltrarUsuario,
+    perfil.nivel,
+    perfil.departamento_id,
+    perfil.setor_id,
+    perfil.regional_id,
+    filtroRegional,
+    filtroGrupo,
+  ]);
+
+  // ✅ Carregar grupos para o select (N1/N2)
+  useEffect(() => {
+    if (!(perfil.nivel === "N1" || perfil.nivel === "N2")) return;
+
+    const loadGrupos = async () => {
+      try {
+        let gq = supabase
+          .from("grupos")
+          .select("id,nome,departamento_id,setor_id,regional_id,ativo")
+          .eq("ativo", true)
+          .order("nome", { ascending: true });
+
+        if (perfil.departamento_id) gq = gq.eq("departamento_id", perfil.departamento_id);
+        if (perfil.setor_id) gq = gq.eq("setor_id", perfil.setor_id);
+
+        // ✅ N2: trava na própria regional
+        if (perfil.nivel === "N2" && perfil.regional_id) gq = gq.eq("regional_id", perfil.regional_id);
+
+        // ✅ N1: se escolheu uma regional, filtra grupos por ela
+        if (perfil.nivel === "N1" && filtroRegional !== "todas") gq = gq.eq("regional_id", filtroRegional);
+
+        const { data, error } = await gq;
+        if (!error && data) {
+          const list = data.map((g: any) => ({
+            id: Number(g.id),
+            nome: String(g.nome ?? `Grupo ${g.id}`),
+            departamento_id: Number(g.departamento_id),
+            setor_id: Number(g.setor_id),
+            regional_id: g.regional_id != null ? Number(g.regional_id) : null,
+            ativo: g.ativo !== false,
+          }));
+          setGrupos(list);
+
+          if (filtroGrupo !== "todos" && !list.some((x) => String(x.id) === String(filtroGrupo))) {
+            setFiltroGrupo("todos");
+          }
+        }
+      } catch {
+        // silencioso
+      }
+    };
+
+    void loadGrupos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [perfil.nivel, perfil.departamento_id, perfil.setor_id, perfil.regional_id, filtroRegional]);
 
   const carregarAgenda = async () => {
     try {
@@ -273,7 +359,7 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
           `
           id, titulo, descricao, tipo, periodicidade,
           data_inicio, data_fim, dia_semana, horario_inicio, duracao_minutos,
-          urgencia, responsavel_id, departamento_id, setor_id, regional_id,
+          urgencia, responsavel_id, departamento_id, setor_id, regional_id, grupo_id,
           tem_checklist, tem_anexo
         `
         )
@@ -282,7 +368,7 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
             ? [
                 `and(tipo.eq.avulsa,data_inicio.eq.${dataRef})`,
                 `and(tipo.eq.normal,periodicidade.eq.diaria,data_inicio.lte.${dataRef})`,
-                `and(tipo.eq.normal,periodicidade.eq.semanal,data_inicio.lte.${dataRef},dia_semana.eq.${weekday_1_7(dataRef)})`,
+                `and(tipo.eq.normal,periodicidade.eq.semanal,data_inicio.lte.${dataRef})`,
                 `and(tipo.eq.normal,periodicidade.eq.mensal,data_inicio.lte.${dataRef})`,
               ].join(",")
             : [
@@ -316,6 +402,11 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
       // ✅ usuário extra: N1 e N2
       if ((perfil.nivel === "N1" || perfil.nivel === "N2") && filtroUsuario !== "todos") {
         q = q.eq("responsavel_id", filtroUsuario);
+      }
+
+      // ✅ grupo extra: N1 e N2
+      if ((perfil.nivel === "N1" || perfil.nivel === "N2") && filtroGrupo !== "todos") {
+        q = q.eq("grupo_id", Number(filtroGrupo));
       }
 
       const { data, error } = await q;
@@ -443,6 +534,11 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
         if (!r.data_inicio) return false;
         return dayOfMonth(r.data_inicio) === domAlvo;
       });
+      rotinas = rotinas.filter((r) => {
+        const p = (r.periodicidade ?? "").toLowerCase();
+        if (p !== "semanal") return true;
+        return matchDiaSemana(r.dia_semana, dataRef);
+      });
 
       const rotinaIds = Array.from(new Set(rotinas.map((r) => r?.id).filter((id): id is string => typeof id === "string" && id.length > 0)));
 
@@ -507,6 +603,7 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
     filtro,
     filtroRegional,
     filtroUsuario,
+    filtroGrupo,
     perfil.id,
     perfil.nivel,
     perfil.setor_id,
@@ -679,8 +776,11 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
                 onChange={(e) => setFiltroUsuario(e.target.value as any)}
                 style={{ ...styles.input, fontSize: 12, padding: "4px 8px", maxWidth: 240 }}
                 title="Filtrar por usuário"
+                disabled={filtroGrupo === "todos"}
               >
-                <option value="todos">Todos usuários</option>
+                <option value="todos">
+                  {filtroGrupo === "todos" ? "Escolha um grupo primeiro" : "Todos usuários"}
+                </option>
                 {usuarios.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.nome}
@@ -688,12 +788,28 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
                 ))}
               </select>
 
-              {(filtroUsuario !== "todos" || (perfil.nivel === "N1" && filtroRegional !== "todas")) && (
+              {/* ✅ Grupo: N1 e N2 */}
+              <select
+                value={filtroGrupo}
+                onChange={(e) => setFiltroGrupo(e.target.value as any)}
+                style={{ ...styles.input, fontSize: 12, padding: "4px 8px", maxWidth: 220 }}
+                title="Filtrar por grupo"
+              >
+                <option value="todos">Todos grupos</option>
+                {grupos.map((g) => (
+                  <option key={g.id} value={String(g.id)}>
+                    {g.nome}
+                  </option>
+                ))}
+              </select>
+
+              {(filtroUsuario !== "todos" || filtroGrupo !== "todos" || (perfil.nivel === "N1" && filtroRegional !== "todas")) && (
                 <button
                   type="button"
                   onClick={() => {
                     if (perfil.nivel === "N1") setFiltroRegional("todas");
                     setFiltroUsuario("todos");
+                    setFiltroGrupo("todos");
                   }}
                   style={{ ...styles.buttonSecondary, padding: "4px 10px", fontSize: 12 }}
                   title="Limpar filtros"
@@ -1136,3 +1252,5 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
     </div>
   );
 }
+
+

@@ -27,7 +27,7 @@ export const N3CriarRotinaAvulsa: React.FC<Props> = ({ perfil }) => {
   const [titulo, setTitulo] = useState("");
   const [descricao, setDescricao] = useState("");
   const [duracaoMin, setDuracaoMin] = useState("30");
-  const [dataInicio, setDataInicio] = useState("");
+  const [dataInicio, setDataInicio] = useState(todayISO());
   const [horarioInicio, setHorarioInicio] = useState("08:00");
 
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
@@ -104,7 +104,7 @@ export const N3CriarRotinaAvulsa: React.FC<Props> = ({ perfil }) => {
           duracao_minutos: dur,
           tipo: "avulsa",
           periodicidade: "diaria",
-          data_inicio: dataInicio || null,
+          data_inicio: dataInicio || todayISO(),
           horario_inicio: horarioInicio || null,
           tem_checklist: false,
           tem_anexo: false,
@@ -129,7 +129,7 @@ export const N3CriarRotinaAvulsa: React.FC<Props> = ({ perfil }) => {
       setTitulo("");
       setDescricao("");
       setDuracaoMin("30");
-      setDataInicio("");
+      setDataInicio(todayISO());
       setHorarioInicio("08:00");
     } catch (err) {
       setStatusMsg(`Erro inesperado: ${String(err)}`);
@@ -211,7 +211,7 @@ export const N3CriarRotinaAvulsa: React.FC<Props> = ({ perfil }) => {
               setTitulo("");
               setDescricao("");
               setDuracaoMin("30");
-              setDataInicio("");
+              setDataInicio(todayISO());
               setHorarioInicio("08:00");
             }}
           >

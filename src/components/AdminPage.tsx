@@ -300,12 +300,14 @@ export default function AdminPage() {
     departamento_id: string | number | "";
     setor_id: string | number | "";
     regional_id: string | number | "";
+    grupo_id: string | number | "";
     ativo: boolean;
   }>({
     nivel: "N1",
     departamento_id: "",
     setor_id: "",
     regional_id: "",
+    grupo_id: "",
     ativo: true,
   });
 
@@ -317,6 +319,7 @@ export default function AdminPage() {
     departamento_id: string | number | "";
     setor_id: string | number | "";
     regional_id: string | number | "";
+    grupo_id: string | number | "";
     senha: string;
   }>({
     nome: "",
@@ -325,6 +328,7 @@ export default function AdminPage() {
     departamento_id: "",
     setor_id: "",
     regional_id: "",
+    grupo_id: "",
     senha: "",
   });
   const [criandoUsuario, setCriandoUsuario] = useState(false);
@@ -400,6 +404,7 @@ export default function AdminPage() {
         departamento_id,
         setor_id,
         regional_id,
+        grupo_id,
         ativo
       `,
       )
@@ -531,6 +536,10 @@ export default function AdminPage() {
           novoUsuario.regional_id === ""
             ? null
             : Number(novoUsuario.regional_id),
+        grupo_id:
+          novoUsuario.grupo_id === ""
+            ? null
+            : Number(novoUsuario.grupo_id),
         senha: novoUsuario.senha.trim(),
       };
 
@@ -565,6 +574,7 @@ export default function AdminPage() {
           departamento_id: "",
           setor_id: "",
           regional_id: "",
+          grupo_id: "",
           senha: "",
         });
         await carregarUsuarios();
@@ -585,7 +595,8 @@ export default function AdminPage() {
       departamento_id: u.departamento_id ?? "",
       setor_id: u.setor_id ?? "",
       regional_id: u.regional_id ?? "",
-      ativo: (u as any).ativo ?? true,
+      grupo_id: u.grupo_id ?? "",
+      ativo: u.ativo ?? true,
     });
   }
 
@@ -596,6 +607,7 @@ export default function AdminPage() {
       departamento_id: "",
       setor_id: "",
       regional_id: "",
+      grupo_id: "",
       ativo: true,
     });
   }
@@ -619,6 +631,10 @@ export default function AdminPage() {
         formUsuario.regional_id === ""
           ? null
           : Number(formUsuario.regional_id),
+      grupo_id:
+        formUsuario.grupo_id === ""
+          ? null
+          : Number(formUsuario.grupo_id),
       ativo: formUsuario.ativo,
     };
 
@@ -1128,6 +1144,7 @@ export default function AdminPage() {
                           departamento_id: e.target.value,
                           setor_id: "",
                           regional_id: "",
+                          grupo_id: "",
                         }))
                       }
                       style={adminStyles.select}
@@ -1150,6 +1167,7 @@ export default function AdminPage() {
                           ...prev,
                           setor_id: e.target.value,
                           regional_id: "",
+                          grupo_id: "",
                         }))
                       }
                       style={adminStyles.select}
@@ -1178,6 +1196,7 @@ export default function AdminPage() {
                         setNovoUsuario((prev) => ({
                           ...prev,
                           regional_id: e.target.value,
+                          grupo_id: "",
                         }))
                       }
                       style={adminStyles.select}
@@ -1192,6 +1211,46 @@ export default function AdminPage() {
                         .map((r) => (
                           <option key={r.id} value={r.id}>
                             {r.nome}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div style={adminStyles.formGroup}>
+                    <label style={adminStyles.label}>Grupo</label>
+                    <select
+                      value={novoUsuario.grupo_id}
+                      onChange={(e) =>
+                        setNovoUsuario((prev) => ({
+                          ...prev,
+                          grupo_id: e.target.value,
+                        }))
+                      }
+                      style={adminStyles.select}
+                    >
+                      <option value="">Nenhum</option>
+                      {grupos
+                        .filter((g) => g.ativo !== false)
+                        .filter(
+                          (g) =>
+                            !novoUsuario.departamento_id ||
+                            g.departamento_id ===
+                              Number(novoUsuario.departamento_id),
+                        )
+                        .filter(
+                          (g) =>
+                            !novoUsuario.setor_id ||
+                            g.setor_id === Number(novoUsuario.setor_id),
+                        )
+                        .filter(
+                          (g) =>
+                            !novoUsuario.regional_id ||
+                            g.regional_id ===
+                              Number(novoUsuario.regional_id),
+                        )
+                        .map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.nome}
                           </option>
                         ))}
                     </select>
@@ -1270,13 +1329,14 @@ export default function AdminPage() {
                       <select
                         value={formUsuario.departamento_id}
                         onChange={(e) =>
-                          setFormUsuario((prev) => ({
-                            ...prev,
-                            departamento_id: e.target.value,
-                            setor_id: "",
-                            regional_id: "",
-                          }))
-                        }
+                        setFormUsuario((prev) => ({
+                          ...prev,
+                          departamento_id: e.target.value,
+                          setor_id: "",
+                          regional_id: "",
+                          grupo_id: "",
+                        }))
+                      }
                         style={adminStyles.select}
                       >
                         <option value="">– Nenhum –</option>
@@ -1293,12 +1353,13 @@ export default function AdminPage() {
                       <select
                         value={formUsuario.setor_id}
                         onChange={(e) =>
-                          setFormUsuario((prev) => ({
-                            ...prev,
-                            setor_id: e.target.value,
-                            regional_id: "",
-                          }))
-                        }
+                        setFormUsuario((prev) => ({
+                          ...prev,
+                          setor_id: e.target.value,
+                          regional_id: "",
+                          grupo_id: "",
+                        }))
+                      }
                         style={adminStyles.select}
                       >
                         <option value="">– Nenhum –</option>
@@ -1322,11 +1383,12 @@ export default function AdminPage() {
                       <select
                         value={formUsuario.regional_id}
                         onChange={(e) =>
-                          setFormUsuario((prev) => ({
-                            ...prev,
-                            regional_id: e.target.value,
-                          }))
-                        }
+                        setFormUsuario((prev) => ({
+                          ...prev,
+                          regional_id: e.target.value,
+                          grupo_id: "",
+                        }))
+                      }
                         style={adminStyles.select}
                       >
                         <option value="">– Nenhuma –</option>
@@ -1341,12 +1403,52 @@ export default function AdminPage() {
                               {r.nome}
                             </option>
                           ))}
-                      </select>
-                    </div>
+                    </select>
+                  </div>
 
-                    <div style={adminStyles.formGroup}>
-                      <label style={adminStyles.label}>Status</label>
-                      <label style={adminStyles.checkboxRow}>
+                  <div style={adminStyles.formGroup}>
+                    <label style={adminStyles.label}>Grupo</label>
+                    <select
+                      value={formUsuario.grupo_id}
+                      onChange={(e) =>
+                        setFormUsuario((prev) => ({
+                          ...prev,
+                          grupo_id: e.target.value,
+                        }))
+                      }
+                      style={adminStyles.select}
+                    >
+                      <option value="">Nenhum</option>
+                      {grupos
+                        .filter((g) => g.ativo !== false)
+                        .filter(
+                          (g) =>
+                            !formUsuario.departamento_id ||
+                            g.departamento_id ===
+                              Number(formUsuario.departamento_id),
+                        )
+                        .filter(
+                          (g) =>
+                            !formUsuario.setor_id ||
+                            g.setor_id === Number(formUsuario.setor_id),
+                        )
+                        .filter(
+                          (g) =>
+                            !formUsuario.regional_id ||
+                            g.regional_id ===
+                              Number(formUsuario.regional_id),
+                        )
+                        .map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.nome}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div style={adminStyles.formGroup}>
+                    <label style={adminStyles.label}>Status</label>
+                    <label style={adminStyles.checkboxRow}>
                         <input
                           type="checkbox"
                           checked={formUsuario.ativo}
@@ -1402,6 +1504,7 @@ export default function AdminPage() {
                       <th style={adminStyles.th}>Departamento</th>
                       <th style={adminStyles.th}>Setor</th>
                       <th style={adminStyles.th}>Regional</th>
+                      <th style={adminStyles.th}>Grupo</th>
                       <th style={adminStyles.th}>Status</th>
                       <th style={adminStyles.th}>Ações</th>
                     </tr>
@@ -1409,7 +1512,7 @@ export default function AdminPage() {
                   <tbody>
                     {usuarios.length === 0 && (
                       <tr>
-                        <td colSpan={8} style={adminStyles.emptyRow}>
+                        <td colSpan={9} style={adminStyles.emptyRow}>
                           Nenhum usuário cadastrado.
                         </td>
                       </tr>
@@ -1417,15 +1520,12 @@ export default function AdminPage() {
 
                     {usuarios.map((u) => {
                       const dep = departamentos.find(
-                        (d) => d.id === (u as any).departamento_id,
+                        (d) => d.id === u.departamento_id,
                       );
-                      const set = setores.find(
-                        (s) => s.id === (u as any).setor_id,
-                      );
-                      const reg = regionais.find(
-                        (r) => r.id === (u as any).regional_id,
-                      );
-                      const ativo = (u as any).ativo ?? true;
+                      const set = setores.find((s) => s.id === u.setor_id);
+                      const reg = regionais.find((r) => r.id === u.regional_id);
+                      const grp = grupos.find((g) => g.id === u.grupo_id);
+                      const ativo = u.ativo ?? true;
 
                       return (
                         <tr key={u.id}>
@@ -1435,6 +1535,7 @@ export default function AdminPage() {
                           <td style={adminStyles.td}>{dep?.nome ?? "–"}</td>
                           <td style={adminStyles.td}>{set?.nome ?? "–"}</td>
                           <td style={adminStyles.td}>{reg?.nome ?? "–"}</td>
+                          <td style={adminStyles.td}>{grp?.nome ?? "–"}</td>
                           <td style={adminStyles.td}>
                             <span
                               style={

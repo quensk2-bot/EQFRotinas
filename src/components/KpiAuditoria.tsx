@@ -22,11 +22,14 @@ type RotinaInfo = {
   titulo: string;
   responsavel_id: string;
   regional_id: number | null;
+  grupo_id: number | null;
 };
 
 type UsuarioInfo = { id: string; nome: string; nivel: string };
 
 type AnexoInfo = { execucao_id: number; storage_path: string };
+
+type GrupoOption = { id: number; nome: string };
 
 function startOfDayISO(d: string) {
   return new Date(`${d}T00:00:00`).toISOString();
@@ -60,8 +63,10 @@ export function KpiAuditoria({ perfil }: Props) {
   const [dataIni, setDataIni] = useState(hoje);
   const [dataFim, setDataFim] = useState(hoje);
   const [regionalFiltro, setRegionalFiltro] = useState<number | "todas">("todas");
+  const [grupoFiltro, setGrupoFiltro] = useState<number | "todos">("todos");
 
   const [regionais, setRegionais] = useState<{ id: number; nome: string }[]>([]);
+  const [grupos, setGrupos] = useState<GrupoOption[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -88,6 +93,32 @@ export function KpiAuditoria({ perfil }: Props) {
       })
       .catch(() => {});
   }, [perfil.nivel]);
+
+  useEffect(() => {
+    if (!(perfil.nivel === "N1" || perfil.nivel === "N2")) return;
+
+    const loadGrupos = async () => {
+      try {
+        let q = supabase.from("grupos").select("id,nome,departamento_id,setor_id,regional_id,ativo").eq("ativo", true);
+        if (perfil.departamento_id) q = q.eq("departamento_id", perfil.departamento_id);
+        if (perfil.setor_id) q = q.eq("setor_id", perfil.setor_id);
+
+        if (perfil.nivel === "N2" && perfil.regional_id) q = q.eq("regional_id", perfil.regional_id);
+        if (perfil.nivel === "N1" && regionalFiltro !== "todas") q = q.eq("regional_id", regionalFiltro);
+
+        const { data, error } = await q.order("nome", { ascending: true });
+        if (!error && data) {
+          const list = data.map((g: any) => ({ id: Number(g.id), nome: String(g.nome ?? `Grupo ${g.id}`) }));
+          setGrupos(list);
+          if (grupoFiltro !== "todos" && !list.some((x) => x.id === grupoFiltro)) setGrupoFiltro("todos");
+        }
+      } catch {
+        // silencioso
+      }
+    };
+
+    void loadGrupos();
+  }, [perfil.nivel, perfil.departamento_id, perfil.setor_id, perfil.regional_id, regionalFiltro, grupoFiltro]);
 
   const carregar = async () => {
     try {
@@ -137,7 +168,7 @@ export function KpiAuditoria({ perfil }: Props) {
       const rotinaIds = Array.from(new Set(execs.map((e) => e.rotina_id)));
       const { data: rotData } = await supabase
         .from("rotinas")
-        .select("id,titulo,responsavel_id,regional_id")
+        .select("id,titulo,responsavel_id,regional_id,grupo_id")
         .in("id", rotinaIds);
       const rotMap: Record<string, RotinaInfo> = {};
       (rotData ?? []).forEach((r: any) => {
@@ -146,8 +177,13 @@ export function KpiAuditoria({ perfil }: Props) {
           titulo: String(r.titulo ?? "Rotina"),
           responsavel_id: String(r.responsavel_id ?? ""),
           regional_id: r.regional_id ?? null,
+          grupo_id: r.grupo_id ?? null,
         };
       });
+
+      if (grupoFiltro !== "todos") {
+        execs = execs.filter((e) => rotMap[e.rotina_id]?.grupo_id === grupoFiltro);
+      }
 
       // Anexos
       const exIds = execs.map((e) => e.id);
@@ -194,7 +230,7 @@ export function KpiAuditoria({ perfil }: Props) {
   useEffect(() => {
     void carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataIni, dataFim, regionalFiltro, perfil.id, perfil.nivel, perfil.departamento_id, perfil.setor_id, perfil.regional_id]);
+  }, [dataIni, dataFim, regionalFiltro, grupoFiltro, perfil.id, perfil.nivel, perfil.departamento_id, perfil.setor_id, perfil.regional_id]);
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
@@ -235,6 +271,21 @@ export function KpiAuditoria({ perfil }: Props) {
             {regionais.map((r) => (
               <option key={r.id} value={String(r.id)}>
                 {r.nome}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {(perfil.nivel === "N1" || perfil.nivel === "N2") && (
+          <select
+            value={String(grupoFiltro)}
+            onChange={(e) => setGrupoFiltro(e.target.value === "todos" ? "todos" : Number(e.target.value))}
+            style={{ ...baseStyles.input, fontSize: 12, padding: "4px 8px", minWidth: 180 }}
+          >
+            <option value="todos">Todos grupos</option>
+            {grupos.map((g) => (
+              <option key={g.id} value={String(g.id)}>
+                {g.nome}
               </option>
             ))}
           </select>

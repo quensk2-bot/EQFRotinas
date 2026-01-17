@@ -9,6 +9,8 @@ export type Usuario = {
   departamento_id: number | null;
   setor_id: number | null;
   regional_id: number | null;
+  grupo_id?: number | null;
+  ativo?: boolean;
 };
 
 export type TipoItemRotina = "valor" | "texto" | "moeda" | "booleano";
@@ -33,8 +35,10 @@ export type RotinaPadrao = {
   titulo: string;
   descricao: string | null;
   sugestao_duracao_minutos: number | null;
+  horario_inicio?: string | null;
+  dia_semana?: string | null;
 
-  periodicidade: "diaria" | "semanal" | "mensal";
+  periodicidade: "diaria" | "semanal" | "quinzenal" | "mensal";
 
   checklist_padrao: ChecklistItemPadrao[] | null;
 

@@ -8,7 +8,7 @@ type Props = {
   usuarioLogado: Usuario;
 };
 
-type Periodicidade = "diaria" | "semanal" | "mensal";
+type Periodicidade = "diaria" | "semanal" | "quinzenal" | "mensal";
 
 type GrupoOption = {
   id: number;
@@ -39,7 +39,9 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
   const [titulo, setTitulo] = useState("");
   const [descricao, setDescricao] = useState("");
   const [sugestaoDuracao, setSugestaoDuracao] = useState<number | "">(30);
+  const [horarioPadrao, setHorarioPadrao] = useState("08:00");
   const [periodicidade, setPeriodicidade] = useState<Periodicidade>("diaria");
+  const [diasSemanaPadrao, setDiasSemanaPadrao] = useState<string[]>([]);
 
   const [checklist, setChecklist] = useState<ChecklistItemPadrao[]>([
     emptyChecklistItem(1),
@@ -134,7 +136,7 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
         .select(
           `
           id, titulo, descricao, sugestao_duracao_minutos,
-          periodicidade, checklist_padrao,
+          horario_inicio, periodicidade, dia_semana, checklist_padrao,
           arquivo_modelo_nome, arquivo_modelo_url,
           exige_anexos, tem_checklist, tem_anexo,
           criado_por_id, criado_em, atualizado_em,
@@ -168,12 +170,20 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
     usuarioLogado.regional_id,
   ]);
 
+  useEffect(() => {
+    if (!["semanal", "quinzenal"].includes(periodicidade)) {
+      setDiasSemanaPadrao([]);
+    }
+  }, [periodicidade]);
+
   function resetForm() {
     setEditando(null);
     setTitulo("");
     setDescricao("");
     setSugestaoDuracao(30);
+    setHorarioPadrao("08:00");
     setPeriodicidade("diaria");
+    setDiasSemanaPadrao([]);
     setChecklist([emptyChecklistItem(1)]);
     setArquivoModeloNome("");
     setArquivoModeloUrl("");
@@ -236,9 +246,16 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
     setTitulo(modelo.titulo);
     setDescricao(modelo.descricao ?? "");
     setSugestaoDuracao(modelo.sugestao_duracao_minutos ?? "");
+    setHorarioPadrao(modelo.horario_inicio ?? "08:00");
 
     const p = ((modelo.periodicidade ?? "diaria") as string).toLowerCase() as Periodicidade;
     setPeriodicidade(p);
+    const diasRaw = ((modelo as any).dia_semana ?? "") as string;
+    const dias = diasRaw
+      .split(",")
+      .map((d) => d.trim())
+      .filter((d) => ["2", "3", "4", "5", "6"].includes(d));
+    setDiasSemanaPadrao(dias);
 
     const itens = (modelo.checklist_padrao ?? []) as ChecklistItemPadrao[];
     setChecklist(itens.length > 0 ? itens : [emptyChecklistItem(1)]);
@@ -278,10 +295,13 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
       return;
     }
     if (!titulo.trim()) {
-      alert("Título é obrigatório.");
+      alert("Titulo obrigatorio.");
       return;
     }
-
+    if (["semanal", "quinzenal"].includes(periodicidade) && diasSemanaPadrao.length === 0) {
+      alert("Selecione pelo menos um dia da semana.");
+      return;
+    }
     if (!podeUsar) {
       alert("Seu usuário N1 precisa estar vinculado a Departamento e Setor.");
       return;
@@ -307,6 +327,8 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
       descricao: descricao.trim() || null,
       periodicidade,
       sugestao_duracao_minutos: sugestaoDuracao === "" ? null : Number(sugestaoDuracao),
+      horario_inicio: horarioPadrao || null,
+      dia_semana: diasSemanaPadrao.length ? diasSemanaPadrao.join(",") : null,
       checklist_padrao: checklistNormalizado,
       arquivo_modelo_nome: arquivoModeloNome || null,
       arquivo_modelo_url: arquivoModeloUrl || null,
@@ -471,7 +493,7 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
           />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
           <div>
             <label style={styles.label}>Sugestão de duração (minutos)</label>
             <input
@@ -480,6 +502,16 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
               onChange={(e) => setSugestaoDuracao(e.target.value === "" ? "" : Number(e.target.value))}
               style={styles.input}
               min={1}
+              disabled={!podeUsar}
+            />
+          </div>
+          <div>
+            <label style={styles.label}>Horario padrao</label>
+            <input
+              type="time"
+              value={horarioPadrao}
+              onChange={(e) => setHorarioPadrao(e.target.value)}
+              style={styles.input}
               disabled={!podeUsar}
             />
           </div>
@@ -493,8 +525,51 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
             >
               <option value="diaria">Diária</option>
               <option value="semanal">Semanal</option>
+              <option value="quinzenal">Quinzenal (2x mes)</option>
               <option value="mensal">Mensal</option>
             </select>
+          </div>
+        </div>
+
+        <div>
+          <label style={styles.label}>Dia da semana</label>
+          <div
+            style={{
+              border: `1px solid ${theme.colors.borderSoft}`,
+              borderRadius: 10,
+              padding: 8,
+              display: "grid",
+              gap: 6,
+              color: "#e5e7eb",
+              opacity: ["semanal", "quinzenal"].includes(periodicidade) ? 1 : 0.5,
+            }}
+          >
+            {[
+              { value: "2", label: "Segunda" },
+              { value: "3", label: "Terca" },
+              { value: "4", label: "Quarta" },
+              { value: "5", label: "Quinta" },
+              { value: "6", label: "Sexta" },
+            ].map((d) => (
+              <label key={d.value} style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12 }}>
+                <input
+                  type="checkbox"
+                  disabled={!podeUsar || !["semanal", "quinzenal"].includes(periodicidade)}
+                  checked={diasSemanaPadrao.includes(d.value)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setDiasSemanaPadrao((curr) => [...new Set([...curr, d.value])]);
+                    } else {
+                      setDiasSemanaPadrao((curr) => curr.filter((x) => x !== d.value));
+                    }
+                  }}
+                />
+                {d.label}
+              </label>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: theme.colors.textMuted, marginTop: 4 }}>
+            Obs.: so habilitado para Semanal ou Quinzenal.
           </div>
         </div>
 
@@ -618,3 +693,10 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
 };
 
 export default RotinasPadraoPage;
+
+
+
+
+
+
+

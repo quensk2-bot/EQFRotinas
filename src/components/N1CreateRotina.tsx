@@ -1,4 +1,3 @@
-// src/components/N1CreateRotina.tsx
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { styles, theme } from "../styles";
@@ -27,6 +26,7 @@ type RotinaPadraoOption = {
   titulo: string;
   descricao: string | null;
   sugestao_duracao_minutos: number | null;
+  horario_inicio: string | null;
   urgencia: Urgencia | null;
   tipo: TipoRotina | null;
   periodicidade: Periodicidade | null;
@@ -95,6 +95,14 @@ function normalizeDiaSemana(d: any): "" | "2" | "3" | "4" | "5" | "6" | "7" {
   return "";
 }
 
+function parseDiasSemana(value: string | null | undefined): string[] {
+  if (!value) return [];
+  return String(value)
+    .split(",")
+    .map((d) => d.trim())
+    .filter((d) => ["2", "3", "4", "5", "6", "7"].includes(d));
+}
+
 function nextDateForWeekday(baseISO: string, dia: "2" | "3" | "4" | "5" | "6" | "7"): string {
   // dia: "2"=segunda, "3"=terça, "4"=quarta, "5"=quinta, "6"=sexta, "7"=sábado
   const base = new Date(baseISO + "T00:00:00");
@@ -111,7 +119,7 @@ function nextDateForWeekday(baseISO: string, dia: "2" | "3" | "4" | "5" | "6" | 
 export function N1CreateRotina({ perfil }: Props) {
   // campos editáveis
   const [duracaoMinutos, setDuracaoMinutos] = useState("30"); // default 30
-  const [dataInicio, setDataInicio] = useState("");
+  const [dataInicio, setDataInicio] = useState(todayISO());
   const [dataFim, setDataFim] = useState("");
   const [horarioInicio, setHorarioInicio] = useState("08:00");
   const [usuarios, setUsuarios] = useState<UsuarioOption[]>([]);
@@ -236,6 +244,7 @@ export function N1CreateRotina({ perfil }: Props) {
           titulo,
           descricao,
           sugestao_duracao_minutos,
+          horario_inicio,
           urgencia,
           tipo,
           periodicidade,
@@ -313,11 +322,10 @@ export function N1CreateRotina({ perfil }: Props) {
     if (m.urgencia) setUrgencia(m.urgencia);
     if (m.tipo) setTipoRotina(m.tipo);
     if (m.periodicidade) setPeriodicidade(m.periodicidade);
-    if (m.dia_semana) {
-      const ds = normalizeDiaSemana(m.dia_semana);
-      setDiasSemana(ds ? [ds] : []);
-    }
+    const dsList = parseDiasSemana(m.dia_semana);
+    setDiasSemana(dsList);
     if (m.grupo_id != null && String(m.grupo_id) !== grupoId) setGrupoId(String(m.grupo_id));
+    if (m.horario_inicio) setHorarioInicio(m.horario_inicio);
     setTemChecklist(!!m.tem_checklist);
     setTemAnexo(!!m.tem_anexo);
   };
@@ -360,7 +368,7 @@ export function N1CreateRotina({ perfil }: Props) {
       const baseDias =
         periodicidadeEfetiva === "semanal" || periodicidadeEfetiva === "quinzenal"
           ? usandoModelo && modeloSelecionado?.dia_semana
-            ? [normalizeDiaSemana(modeloSelecionado.dia_semana)].filter(Boolean) as string[]
+            ? parseDiasSemana(modeloSelecionado.dia_semana)
             : diasSemana
           : [];
 
@@ -394,17 +402,17 @@ export function N1CreateRotina({ perfil }: Props) {
 
       const diasCriar = baseDias.length ? baseDias : [null];
       const resultados: any[] = [];
-      let baseData = toISODate(dataInicio) ?? todayISO();
+      let baseData = tipoEfetivo === "avulsa" ? (toISODate(dataInicio) ?? todayISO()) : todayISO();
 
       // diária: se cair em sábado/domingo, empurra para a próxima segunda
-      if (periodicidadeEfetiva === "diaria") {
+      if (tipoEfetivo === "normal" && periodicidadeEfetiva === "diaria") {
         const dow = new Date(baseData + "T00:00:00").getDay(); // 0=dom,6=sab
         if (dow === 0) baseData = addDaysISO(baseData, 1);
         if (dow === 6) baseData = addDaysISO(baseData, 2);
       }
 
       // mensal: mantém bloqueio para fim de semana
-      if (periodicidadeEfetiva === "mensal") {
+      if (tipoEfetivo === "normal" && periodicidadeEfetiva === "mensal") {
         const dow = new Date(baseData + "T00:00:00").getDay(); // 0=dom,6=sab
         if (dow === 0 || dow === 6) {
           setStatusMsg("Rotinas mensais não podem iniciar em sábado ou domingo. Escolha um dia útil.");
@@ -415,7 +423,10 @@ export function N1CreateRotina({ perfil }: Props) {
 
       for (const dia of diasCriar) {
         // para semanal/quinzenal, usa a data base informada (ou hoje) como primeira ocorrência
-        const dataParaInserir = baseData;
+        const dataParaInserir =
+          periodicidadeParaEdge === "semanal" && dia
+            ? nextDateForWeekday(baseData, dia as any)
+            : baseData;
 
         const { data, error } = await supabase.functions.invoke("eqf-create-rotina-diaria", {
           body: {
@@ -478,7 +489,7 @@ export function N1CreateRotina({ perfil }: Props) {
       setTipoRotina("normal");
       setPeriodicidade("diaria");
       setDiasSemana(["2"]);
-      setDataInicio("");
+      setDataInicio(todayISO());
       setDataFim("");
       setHorarioInicio("08:00");
       setTemChecklist(false);
@@ -767,6 +778,7 @@ export function N1CreateRotina({ perfil }: Props) {
               onChange={(e) => setDataInicio(e.target.value)}
               style={styles.input}
               min={todayISO()}
+              disabled={tipoRotina !== "avulsa"}
             />
           </div>
           <div>
@@ -786,6 +798,7 @@ export function N1CreateRotina({ perfil }: Props) {
               value={horarioInicio}
               onChange={(e) => setHorarioInicio(e.target.value)}
               style={styles.input}
+              disabled={lockModeloFields && !!modeloSelecionado?.horario_inicio}
             />
             <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
               Duração estimada: {duracao} min • Horário atual: {String(hora).padStart(2, "0")}:{String(minuto).padStart(2, "0")}
@@ -835,7 +848,7 @@ export function N1CreateRotina({ perfil }: Props) {
               setTipoRotina("normal");
               setPeriodicidade("diaria");
               setDiaSemana("2");
-              setDataInicio("");
+              setDataInicio(todayISO());
               setHorarioInicio("08:00");
               setTemChecklist(false);
               setTemAnexo(false);
@@ -872,3 +885,9 @@ export function N1CreateRotina({ perfil }: Props) {
 }
 
 export default N1CreateRotina;
+
+
+
+
+
+

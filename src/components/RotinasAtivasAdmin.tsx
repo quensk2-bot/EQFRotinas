@@ -18,6 +18,7 @@ type Rotina = {
   periodicidade: string;
   horario_inicio: string | null;
   status: string;
+  rotina_padrao_id: string | null;
 };
 
 type UsuarioInfo = { id: string; nome: string; nivel: string; regional_id: number | null };
@@ -102,7 +103,7 @@ export default function RotinasAtivasAdmin({ perfil }: Props) {
 
       let q = supabase
         .from("rotinas")
-        .select("id,titulo,responsavel_id,departamento_id,setor_id,regional_id,data_inicio,data_fim,periodicidade,horario_inicio,status");
+        .select("id,titulo,responsavel_id,departamento_id,setor_id,regional_id,data_inicio,data_fim,periodicidade,horario_inicio,status,rotina_padrao_id");
 
       if (perfil.departamento_id) q = q.eq("departamento_id", perfil.departamento_id);
       if (perfil.setor_id) q = q.eq("setor_id", perfil.setor_id);
@@ -123,6 +124,9 @@ export default function RotinasAtivasAdmin({ perfil }: Props) {
       if (error) throw error;
 
       let rotinas = (data as Rotina[]) ?? [];
+
+      // mostra somente rotinas criadas a partir de modelo (tem rotina_padrao_id)
+      rotinas = rotinas.filter((r) => r.rotina_padrao_id != null);
 
       // N2 não vê N1
       if (isN2) {

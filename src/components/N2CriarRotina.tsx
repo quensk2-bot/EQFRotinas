@@ -16,6 +16,7 @@ type RotinaPadraoRow = {
   titulo: string;
   descricao: string | null;
   sugestao_duracao_minutos: number | null;
+  horario_inicio: string | null;
   periodicidade: string | null;
   urgencia?: string | null;
   tipo?: string | null;
@@ -54,6 +55,24 @@ function normalizarDiaSemana(d?: string | null): "" | "2" | "3" | "4" | "5" | "6
   const v = (d ?? "").toString().trim();
   if (v === "2" || v === "3" || v === "4" || v === "5" || v === "6" || v === "7") return v;
   return "";
+}
+
+function parseDiasSemana(value?: string | null): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((d) => d.trim())
+    .filter((d) => ["2", "3", "4", "5", "6", "7"].includes(d));
+}
+
+function nextDateForWeekday(baseISO: string, dia: "2" | "3" | "4" | "5" | "6" | "7"): string {
+  const base = new Date(baseISO + "T00:00:00");
+  const alvoJs = { "2": 1, "3": 2, "4": 3, "5": 4, "6": 5, "7": 6 }[dia];
+  const baseJs = base.getDay(); // 0..6
+  const diff = (alvoJs - baseJs + 7) % 7;
+  const d = new Date(base);
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
 }
 
 function todayISO() {
@@ -188,9 +207,10 @@ export default function N2CriarRotina({ usuarioLogado }: Props) {
       if (m.sugestao_duracao_minutos != null) setDuracaoMinutos(String(m.sugestao_duracao_minutos));
       if (m.periodicidade) setPeriodicidade(normalizarPeriodicidade(m.periodicidade));
       if (m.dia_semana) {
-        const diaNorm = normalizarDiaSemana(m.dia_semana);
-        if (diaNorm) setDiasSemana([diaNorm]);
+        const dias = parseDiasSemana(m.dia_semana);
+        if (dias.length) setDiasSemana(dias);
       }
+      if (m.horario_inicio) setHorarioInicio(m.horario_inicio);
       setTemChecklist(!!m.tem_checklist);
       setTemAnexo(!!m.tem_anexo);
     }
@@ -278,7 +298,7 @@ export default function N2CriarRotina({ usuarioLogado }: Props) {
         .from("rotinas_padrao")
         .select(
           `
-          id, titulo, descricao, sugestao_duracao_minutos, periodicidade,
+          id, titulo, descricao, sugestao_duracao_minutos, horario_inicio, periodicidade,
           urgencia, tipo, dia_semana, tem_checklist, tem_anexo,
           departamento_id, setor_id, grupo_id
         `
@@ -419,9 +439,7 @@ export default function N2CriarRotina({ usuarioLogado }: Props) {
       const periodicidadeFinal = isModoModelo ? normalizarPeriodicidade(modelo?.periodicidade) : periodicidade;
       const baseDias =
         periodicidadeFinal === "semanal" || periodicidadeFinal === "quinzenal"
-          ? (modelo?.dia_semana
-              ? [normalizarDiaSemana(modelo.dia_semana)].filter(Boolean) as string[]
-              : diasSemana)
+          ? (modelo?.dia_semana ? parseDiasSemana(modelo.dia_semana) : diasSemana)
           : [];
 
       if ((periodicidadeFinal === "semanal" || periodicidadeFinal === "quinzenal") && baseDias.length === 0) {
@@ -432,19 +450,23 @@ export default function N2CriarRotina({ usuarioLogado }: Props) {
 
       const periodicidadeParaEdge = periodicidadeFinal === "quinzenal" ? "semanal" : periodicidadeFinal;
       const diasParaCriar = baseDias.length ? baseDias : [null];
-      const dataInicioFinal = dataInicio || todayISO();
+      const dataInicioFinal = tipoFinal === "avulsa" ? (dataInicio || todayISO()) : todayISO();
 
       const resultados: any[] = [];
       for (const dia of diasParaCriar) {
-          const body: any = {
-            titulo: tituloFinal,
-            descricao: descricaoFinal,
-            duracao_minutos: isModoModelo ? modelo?.sugestao_duracao_minutos ?? minutos : minutos,
+        const dataInicioParaInserir =
+          periodicidadeParaEdge === "semanal" && dia
+            ? nextDateForWeekday(dataInicioFinal, dia as any)
+            : dataInicioFinal;
+        const body: any = {
+          titulo: tituloFinal,
+          descricao: descricaoFinal,
+          duracao_minutos: isModoModelo ? modelo?.sugestao_duracao_minutos ?? minutos : minutos,
           tipo: tipoFinal,
           urgencia: isModoModelo ? (modelo?.urgencia ?? "baixa") : "baixa",
           periodicidade: periodicidadeParaEdge,
           dia_semana: dia,
-          data_inicio: dataInicioFinal,
+          data_inicio: dataInicioParaInserir,
           data_fim: dataFim || null,
           horario_inicio: horarioInicio,
           tem_checklist: lockModelo ? !!modelo?.tem_checklist : temChecklist,
@@ -717,7 +739,13 @@ export default function N2CriarRotina({ usuarioLogado }: Props) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
             <label style={styles.label}>Data de inicio</label>
-            <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} style={styles.input} />
+            <input
+              type="date"
+              value={dataInicio}
+              onChange={(e) => setDataInicio(e.target.value)}
+              style={styles.input}
+              disabled={aba !== "AVULSA"}
+            />
           </div>
           <div>
             <label style={styles.label}>Data de fim (opcional)</label>
@@ -725,7 +753,13 @@ export default function N2CriarRotina({ usuarioLogado }: Props) {
           </div>
           <div>
             <label style={styles.label}>Horario</label>
-            <input type="time" value={horarioInicio} onChange={(e) => setHorarioInicio(e.target.value)} style={styles.input} />
+            <input
+              type="time"
+              value={horarioInicio}
+              onChange={(e) => setHorarioInicio(e.target.value)}
+              style={styles.input}
+              disabled={lockModelo && !!modeloSelecionado?.horario_inicio}
+            />
             <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
               <span style={{ ...slotBadgeStyle, padding: "2px 8px", borderRadius: 10, display: "inline-block" }}>
                 Slot: {slotStatus} {slotLoading ? "(checando...)" : ""}
@@ -802,3 +836,5 @@ export default function N2CriarRotina({ usuarioLogado }: Props) {
     </section>
   );
 }
+
+
