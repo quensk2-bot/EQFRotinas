@@ -14,16 +14,26 @@ type Props = {
 };
 
 type ChecklistItemExec = {
+  id?: number | null;
   ordem: number;
   descricao: string;
   valor: string;
   concluido: boolean;
+  exige_anexo?: boolean;
+  checklist_execucao_id?: number | null;
 };
 
 type Anexo = {
   id: number;
   storage_path: string;
   descricao: string | null;
+  created_at: string;
+};
+
+type ChecklistAnexo = {
+  id: number;
+  checklist_execucao_id: number;
+  storage_path: string;
   created_at: string;
 };
 
@@ -131,6 +141,11 @@ const formatSeconds = (total: number) => {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 };
 
+const getFileNameFromPath = (path: string) => {
+  const parts = path.split("/");
+  return parts[parts.length - 1] || "arquivo";
+};
+
 export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinalizada }: Props) {
   const [isMinimized, setIsMinimized] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -143,6 +158,9 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
   const [anexos, setAnexos] = useState<Anexo[]>([]);
   const [uploading, setUploading] = useState(false);
   const [erroUpload, setErroUpload] = useState<string | null>(null);
+  const [checklistAnexos, setChecklistAnexos] = useState<Record<number, ChecklistAnexo[]>>({});
+  const [uploadingChecklistId, setUploadingChecklistId] = useState<number | null>(null);
+  const [erroChecklistUpload, setErroChecklistUpload] = useState<Record<number, string>>({});
   const [loadingInicial, setLoadingInicial] = useState(false);
   const [erroInicial, setErroInicial] = useState<string | null>(null);
 
@@ -234,6 +252,9 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
       setObservacoes("");
       setChecklist([]);
       setAnexos([]);
+      setChecklistAnexos({});
+      setUploadingChecklistId(null);
+      setErroChecklistUpload({});
       baseAcumuladaRef.current = 0;
       inicioRodandoRef.current = null;
 
@@ -255,7 +276,7 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
         // checklist base
         const { data: itensChecklist, error: checklistErr } = await supabase
           .from("rotina_checklist")
-          .select("ordem, descricao")
+          .select("id, ordem, descricao, exige_anexo")
           .eq("rotina_id", rotina.id)
           .order("ordem", { ascending: true });
 
@@ -267,13 +288,15 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
         let baseChecklist: ChecklistItemExec[] = [];
         if (itensChecklist && itensChecklist.length > 0) {
           baseChecklist = itensChecklist.map((item: any) => ({
+            id: item.id,
             ordem: item.ordem,
             descricao: item.descricao ?? "",
             valor: "",
             concluido: false,
+            exige_anexo: !!item.exige_anexo,
           }));
         } else {
-          baseChecklist = [{ ordem: 1, descricao: rotina.titulo ?? "Etapa principal", valor: "", concluido: false }];
+          baseChecklist = [{ id: null, ordem: 1, descricao: rotina.titulo ?? "Etapa principal", valor: "", concluido: false, exige_anexo: false }];
         }
 
         // execução do dia
@@ -346,17 +369,55 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
 
         recalcElapsed();
 
+        const checklistExecucaoIds: Record<number, number> = {};
+        if (execRow?.id && baseChecklist.length > 0) {
+          const payload = baseChecklist
+            .filter((item) => item.id)
+            .map((item) => ({
+              execucao_id: execRow.id,
+              checklist_id: item.id,
+            }));
+
+          if (!isReadOnly && payload.length > 0) {
+            await supabase
+              .from("rotina_checklist_execucao")
+              .upsert(payload, { onConflict: "execucao_id,checklist_id" });
+          }
+
+          const { data: execChecklistRows } = await supabase
+            .from("rotina_checklist_execucao")
+            .select("id, checklist_id")
+            .eq("execucao_id", execRow.id);
+
+          if (execChecklistRows) {
+            (execChecklistRows as { id: number; checklist_id: number }[]).forEach((row) => {
+              checklistExecucaoIds[row.checklist_id] = row.id;
+            });
+          }
+        }
+
         setObservacoes(execRow?.observacoes ?? "");
         let checklistExec: ChecklistItemExec[] = baseChecklist;
         if (execRow?.checklist_execucao && Array.isArray(execRow.checklist_execucao)) {
-          checklistExec = execRow.checklist_execucao.map((i: any) => ({
-            ordem: i.ordem,
-            descricao: i.descricao ?? "",
-            valor: i.valor ?? "",
-            concluido: !!i.concluido,
-          }));
+          const baseByOrdem = new Map(baseChecklist.map((i) => [i.ordem, i]));
+          checklistExec = execRow.checklist_execucao.map((i: any) => {
+            const base = baseByOrdem.get(i.ordem);
+            return {
+              id: base?.id ?? null,
+              ordem: i.ordem,
+              descricao: i.descricao ?? base?.descricao ?? "",
+              valor: i.valor ?? "",
+              concluido: !!i.concluido,
+              exige_anexo: base?.exige_anexo ?? false,
+            };
+          });
         }
-        setChecklist(checklistExec);
+        setChecklist(
+          checklistExec.map((item) => ({
+            ...item,
+            checklist_execucao_id: item.id ? checklistExecucaoIds[item.id] ?? null : null,
+          }))
+        );
 
         if (execRow?.id) {
           const { data: anexoRows } = await supabase
@@ -366,6 +427,20 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
             .eq("execucao_id", execRow.id)
             .order("created_at", { ascending: false });
           if (anexoRows) setAnexos(anexoRows as Anexo[]);
+
+          const { data: checklistAnexoRows } = await supabase
+            .from("rotina_checklist_anexos")
+            .select("id, checklist_execucao_id, storage_path, created_at")
+            .eq("execucao_id", execRow.id)
+            .order("created_at", { ascending: false });
+          if (checklistAnexoRows) {
+            const byChecklist: Record<number, ChecklistAnexo[]> = {};
+            (checklistAnexoRows as ChecklistAnexo[]).forEach((row) => {
+              if (!byChecklist[row.checklist_execucao_id]) byChecklist[row.checklist_execucao_id] = [];
+              byChecklist[row.checklist_execucao_id].push(row);
+            });
+            setChecklistAnexos(byChecklist);
+          }
         }
       } catch (e: any) {
         console.error("Erro inesperado na inicialização da execução:", e);
@@ -466,6 +541,18 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
 
       if (error) console.error("Erro ao salvar estado parcial:", error);
       return;
+    }
+
+    const itensComAnexoObrigatorio = checklist.filter((item) => item.exige_anexo && item.checklist_execucao_id);
+    if (itensComAnexoObrigatorio.length > 0) {
+      const pendentes = itensComAnexoObrigatorio.filter((item) => {
+        const anexosItem = checklistAnexos[item.checklist_execucao_id as number] ?? [];
+        return anexosItem.length === 0;
+      });
+      if (pendentes.length > 0) {
+        alert("Checklist com anexo obrigatorio: envie arquivos nos itens marcados como obrigatorios.");
+        return;
+      }
     }
 
     const { error } = await supabase
@@ -655,6 +742,57 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
     }
   };
 
+  const handleUploadChecklistAnexos = async (checklistExecucaoId: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!execucaoId || !rotina || !executorId || isReadOnly) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadingChecklistId(checklistExecucaoId);
+    setErroChecklistUpload((prev) => ({ ...prev, [checklistExecucaoId]: "" }));
+
+    const bucket = "rotina-anexos";
+    const novos: ChecklistAnexo[] = [];
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const path = `rotinas/${rotina.id}/execucoes/${execucaoId}/checklist/${checklistExecucaoId}/${Date.now()}-${i}-${safeName}`;
+
+        const { error: upError } = await supabase.storage.from(bucket).upload(path, file);
+        if (upError) {
+          setErroChecklistUpload((prev) => ({ ...prev, [checklistExecucaoId]: "Erro ao enviar um dos anexos do checklist." }));
+          continue;
+        }
+
+        const { data: inserted, error: insErr } = await supabase
+          .from("rotina_checklist_anexos")
+          .insert({
+            execucao_id: execucaoId,
+            checklist_execucao_id: checklistExecucaoId,
+            storage_path: path,
+            uploaded_by: executorId,
+          })
+          .select("id, checklist_execucao_id, storage_path, created_at")
+          .single();
+
+        if (!insErr && inserted) novos.push(inserted as ChecklistAnexo);
+      }
+
+      if (novos.length > 0) {
+        setChecklistAnexos((prev) => ({
+          ...prev,
+          [checklistExecucaoId]: [...novos, ...(prev[checklistExecucaoId] ?? [])],
+        }));
+      }
+    } catch (err: any) {
+      setErroChecklistUpload((prev) => ({ ...prev, [checklistExecucaoId]: "Erro inesperado ao enviar anexos do checklist." }));
+    } finally {
+      setUploadingChecklistId(null);
+      if (e.target) e.target.value = "";
+    }
+  };
+
   const modal = !isMinimized && (
     <div style={overlayStyle}>
       <div style={modalStyle}>
@@ -751,6 +889,58 @@ export function RotinaExecucaoContainer({ open, rotina, perfil, onClose, onFinal
                         disabled={isFinalizada || isReadOnly}
                         onChange={(e) => handleUpdateValor(item.ordem, e.target.value)}
                       />
+
+                      {item.checklist_execucao_id ? (
+                        <div style={{ gridColumn: "2 / 4", paddingLeft: 2, paddingBottom: 6 }}>
+                          <div style={{ fontSize: 11, color: textMuted, marginBottom: 4 }}>
+                            {item.exige_anexo ? "Anexo obrigatorio para este item." : "Anexos opcionais do item."}
+                          </div>
+
+                          {!isReadOnly && (
+                            <input
+                              type="file"
+                              multiple
+                              disabled={isFinalizada || uploadingChecklistId === item.checklist_execucao_id}
+                              onChange={(e) => handleUploadChecklistAnexos(item.checklist_execucao_id as number, e)}
+                              style={{ fontSize: 12, marginBottom: 4 }}
+                            />
+                          )}
+
+                          {erroChecklistUpload[item.checklist_execucao_id] && (
+                            <div style={{ fontSize: 11, color: "#fecaca", marginBottom: 4 }}>{erroChecklistUpload[item.checklist_execucao_id]}</div>
+                          )}
+                          {uploadingChecklistId === item.checklist_execucao_id && (
+                            <div style={{ fontSize: 11, color: "#e5e7eb", marginBottom: 4 }}>Enviando anexos do checklist...</div>
+                          )}
+
+                          <div style={{ marginTop: 6, maxHeight: 120, overflowY: "auto", fontSize: 12 }}>
+                            {(checklistAnexos[item.checklist_execucao_id] ?? []).length === 0 && (
+                              <div style={{ fontSize: 12, color: textMuted }}>Nenhum anexo enviado para este item.</div>
+                            )}
+                            {(checklistAnexos[item.checklist_execucao_id] ?? []).map((a) => {
+                              const publicUrl = supabase.storage.from("rotina-anexos").getPublicUrl(a.storage_path).data.publicUrl ?? "#";
+                              return (
+                                <div
+                                  key={a.id}
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    padding: "4px 0",
+                                    borderBottom: `1px solid ${borderSoft}`,
+                                  }}
+                                >
+                                  <a href={publicUrl} target="_blank" rel="noreferrer" style={{ color: neon, textDecoration: "none" }}>
+                                    {getFileNameFromPath(a.storage_path)}
+                                  </a>
+                                  <span style={{ fontSize: 10, color: textMuted }}>{new Date(a.created_at).toLocaleString()}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
 

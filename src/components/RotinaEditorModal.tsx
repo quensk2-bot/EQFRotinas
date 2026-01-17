@@ -78,31 +78,6 @@ export const RotinaEditorModal: React.FC<Props> = ({
     void carregarResponsaveis();
   }, [podeEditarBasico, usuarioLogado.setor_id]);
 
-  // validação de limite de horário (máx. 2 por horário para o mesmo responsável)
-  async function validarLimiteHorario(): Promise<boolean> {
-    if (!horarioInicio || !dataInicio) return true;
-
-    const { data, error } = await supabase
-      .from("rotinas")
-      .select("id")
-      .eq("data_inicio", dataInicio)
-      .eq("horario_inicio", horarioInicio)
-      .eq("responsavel_id", responsavelId)
-      .neq("id", rotina.id);
-
-    if (error) {
-      console.error("Erro ao validar limite de horário:", error);
-      return true; // se der erro, não travamos
-    }
-
-    if ((data ?? []).length >= 2) {
-      setErro("Este responsável já possui 2 rotinas neste horário.");
-      return false;
-    }
-
-    return true;
-  }
-
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
     if (!podeEditarBasico) {
@@ -117,13 +92,6 @@ export const RotinaEditorModal: React.FC<Props> = ({
 
     setErro(null);
     setSalvando(true);
-
-    const okLimite = await validarLimiteHorario();
-    if (!okLimite) {
-      setSalvando(false);
-      return;
-    }
-
     const payload = {
       responsavel_id: responsavelId,
       data_inicio: dataInicio,
@@ -365,3 +333,5 @@ export const RotinaEditorModal: React.FC<Props> = ({
     </div>
   );
 };
+
+

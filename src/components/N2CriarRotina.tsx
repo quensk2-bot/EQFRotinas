@@ -9,7 +9,6 @@ type Props = {
 };
 
 type Periodicidade = "diaria" | "semanal" | "quinzenal" | "mensal";
-type SlotStatus = "livre" | "limite" | "bloqueado";
 
 type RotinaPadraoRow = {
   id: string;
@@ -216,62 +215,6 @@ export default function N2CriarRotina({ usuarioLogado }: Props) {
     }
   }, [modeloId, modelos]);
 
-  const [slotCount, setSlotCount] = useState<number>(0);
-  const [slotLoading, setSlotLoading] = useState(false);
-
-  const slotStatus: SlotStatus = useMemo(() => {
-    if (slotCount >= 2) return "bloqueado";
-    if (slotCount === 1) return "limite";
-    return "livre";
-  }, [slotCount]);
-
-  const slotBadgeStyle = useMemo<React.CSSProperties>(() => {
-    if (slotStatus === "bloqueado") {
-      return {
-        border: "1px solid rgba(248,113,113,0.55)",
-        background: "rgba(248,113,113,0.10)",
-        color: "#fecaca",
-      };
-    }
-    if (slotStatus === "limite") {
-      return {
-        border: `1px solid ${theme.colors.neonOrange ?? "#fb923c"}`,
-        background: "rgba(251,146,60,0.10)",
-        color: theme.colors.neonOrange ?? "#fb923c",
-      };
-    }
-    return {
-      border: `1px solid ${theme.colors.neonGreen ?? "#22c55e"}`,
-      background: "rgba(34,197,94,0.10)",
-      color: theme.colors.neonGreen ?? "#22c55e",
-    };
-  }, [slotStatus]);
-
-  useEffect(() => {
-    const run = async () => {
-      if (!responsavelId) return;
-      if (!dataInicio || !horarioInicio) return;
-
-      setSlotLoading(true);
-      try {
-        const { count, error } = await supabase
-          .from("rotinas")
-          .select("id", { count: "exact", head: true })
-          .eq("responsavel_id", responsavelId)
-          .eq("data_inicio", dataInicio)
-          .eq("horario_inicio", horarioInicio);
-
-        if (error) throw error;
-        setSlotCount(count ?? 0);
-      } catch (err) {
-        console.error("Erro ao verificar slot:", err);
-        setSlotCount(0);
-      } finally {
-        setSlotLoading(false);
-      }
-    };
-    void run();
-  }, [responsavelId, dataInicio, horarioInicio]);
 
   useEffect(() => {
     void carregarModelos();
@@ -479,12 +422,6 @@ export default function N2CriarRotina({ usuarioLogado }: Props) {
           grupo_id: Number(grupoId),
           rotina_padrao_id: isModoModelo ? modelo?.id ?? null : null,
         };
-
-        if (slotStatus === "bloqueado") {
-          setStatusMsg("Ja existem 2 rotinas para esse horario e responsavel.");
-          setLoading(false);
-          return;
-        }
 
         const result = await callEdgeFunction("eqf-create-rotina-diaria", body);
         if (!result.ok) {
@@ -760,11 +697,6 @@ export default function N2CriarRotina({ usuarioLogado }: Props) {
               style={styles.input}
               disabled={lockModelo && !!modeloSelecionado?.horario_inicio}
             />
-            <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
-              <span style={{ ...slotBadgeStyle, padding: "2px 8px", borderRadius: 10, display: "inline-block" }}>
-                Slot: {slotStatus} {slotLoading ? "(checando...)" : ""}
-              </span>
-            </div>
           </div>
         </div>
 

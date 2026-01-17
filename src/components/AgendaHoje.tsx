@@ -444,10 +444,12 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
         rotinas = rotinas.filter((r) => !r.data_fim || r.data_fim >= dataIni);
       }
 
-      // filtro: não exibir diárias em sábado/domingo no dia selecionado
-      const dowNum = Number(weekday_1_7(dataRef)); // 1=domingo, 7=sábado
-      if (dowNum === 1 || dowNum === 7) {
-        rotinas = rotinas.filter((r) => (r.periodicidade ?? "").toLowerCase() !== "diaria");
+      // filtro: nao exibir diarias em sabado/domingo apenas no modo "dia"
+      if (modo === "dia") {
+        const dowNum = Number(weekday_1_7(dataRef)); // 1=domingo, 7=sabado
+        if (dowNum === 1 || dowNum === 7) {
+          rotinas = rotinas.filter((r) => (r.periodicidade ?? "").toLowerCase() !== "diaria");
+        }
       }
 
       // ✅ garantir nomes dos responsáveis (para o card)
@@ -1252,5 +1254,6 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
     </div>
   );
 }
+
 
 

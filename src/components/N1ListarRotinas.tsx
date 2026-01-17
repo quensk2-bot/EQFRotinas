@@ -431,39 +431,6 @@ export default function N1ListarRotinas({ perfil }: Props) {
   };
 
   // ----------------------------
-  // REGRA: max 2 rotinas no mesmo horário (por regional + data)
-  // ✅ regional null = Geral e conta também (máximo 2)
-  // ----------------------------
-  const validarLimiteHorario = async (dataISO: string, hora: string, reg: number | null) => {
-    if (!dataISO || !hora) return { ok: false, msg: "Informe data e horário." };
-
-    let q = supabase
-      .from("rotinas")
-      .select("id", { count: "exact", head: true })
-      .eq("data_inicio", dataISO)
-      .eq("horario_inicio", hora);
-
-    if (reg == null) q = q.is("regional_id", null);
-    else q = q.eq("regional_id", reg);
-
-    const { count, error } = await q;
-
-    if (error) {
-      console.error("Erro ao validar limite de horário:", error);
-      return { ok: true, msg: "" };
-    }
-
-    if ((count ?? 0) >= 2) {
-      return {
-        ok: false,
-        msg: `Já existem 2 rotinas agendadas para ${dataISO} às ${hora} nesta regional (inclui Geral quando Regional = Geral).`,
-      };
-    }
-
-    return { ok: true, msg: "" };
-  };
-
-  // ----------------------------
   // submit (function eqf-create-rotina-diaria)
   // ----------------------------
   const handleSubmit = async (e: FormEvent) => {
@@ -503,18 +470,9 @@ export default function N1ListarRotinas({ perfil }: Props) {
     }
 
     setLoadingCriar(true);
-    setStatusMsg("⏳ Validando horário...");
+    setStatusMsg("Criando rotina...");
 
     try {
-      const limite = await validarLimiteHorario(dataInicio, horarioInicio, regionalId);
-      if (!limite.ok) {
-        setStatusMsg(`❌ ${limite.msg}`);
-        setLoadingCriar(false);
-        return;
-      }
-
-      setStatusMsg("⏳ Criando rotina...");
-
       const tipo: TipoRotina = isModoAvulsa ? "avulsa" : "normal";
 
       const tituloEfetivo = isModoModelo ? (modeloSelecionado?.titulo ?? titulo) : titulo;
@@ -725,3 +683,5 @@ export default function N1ListarRotinas({ perfil }: Props) {
     </section>
   );
 }
+
+
