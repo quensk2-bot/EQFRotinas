@@ -13,7 +13,7 @@ type GrupoOption = {
   nome: string;
   departamento_id: number;
   setor_id: number;
-  regional_id: number;
+  regional_id: number | null;
   ativo: boolean;
 };
 
@@ -55,17 +55,23 @@ export const N3CriarRotinaAvulsa: React.FC<Props> = ({ perfil }) => {
         .select("id, nome, departamento_id, setor_id, regional_id, ativo")
         .eq("departamento_id", perfil.departamento_id)
         .eq("setor_id", perfil.setor_id);
-      if (perfil.regional_id != null) q = q.eq("regional_id", perfil.regional_id);
 
       const { data, error } = await q.order("nome", { ascending: true });
       if (error) throw error;
       const ativos = (data ?? []).filter((g: any) => g.ativo !== false) as GrupoOption[];
-      setGrupos(ativos);
-      setGrupoId((prev) => {
-        if (prev && ativos.some((g) => String(g.id) === String(prev))) return prev;
-        return ativos[0] ? String(ativos[0].id) : "";
-      });
-      setErroGrupos(ativos.length ? null : "Nenhum grupo ativo encontrado.");
+      if (perfil.grupo_id != null) {
+        const alvo = ativos.find((g) => g.id === Number(perfil.grupo_id));
+        setGrupos(alvo ? [alvo] : []);
+        setGrupoId(alvo ? String(alvo.id) : "");
+        setErroGrupos(alvo ? null : "Grupo do usuario nao encontrado.");
+      } else {
+        setGrupos(ativos);
+        setGrupoId((prev) => {
+          if (prev && ativos.some((g) => String(g.id) === String(prev))) return prev;
+          return ativos[0] ? String(ativos[0].id) : "";
+        });
+        setErroGrupos(ativos.length ? null : "Nenhum grupo ativo encontrado.");
+      }
     } catch (err) {
       console.error(err);
       setErroGrupos("Erro ao carregar grupos.");
@@ -83,7 +89,8 @@ export const N3CriarRotinaAvulsa: React.FC<Props> = ({ perfil }) => {
       setStatusMsg("Título é obrigatório.");
       return;
     }
-    if (!grupoId) {
+    const grupoIdEfetivo = perfil.grupo_id != null ? String(perfil.grupo_id) : grupoId;
+    if (!grupoIdEfetivo) {
       setStatusMsg("Selecione o grupo.");
       return;
     }
@@ -114,7 +121,7 @@ export const N3CriarRotinaAvulsa: React.FC<Props> = ({ perfil }) => {
           setor_id: perfil.setor_id ?? null,
           regional_id: perfil.regional_id ?? null,
           rotina_padrao_id: null,
-          grupo_id: Number(grupoId),
+          grupo_id: Number(grupoIdEfetivo),
         },
       });
 
@@ -157,14 +164,22 @@ export const N3CriarRotinaAvulsa: React.FC<Props> = ({ perfil }) => {
       <form onSubmit={handleSubmit} style={{ display: "grid", gap: 10 }}>
         <div>
           <label style={styles.label}>Grupo (obrigatório)</label>
-          <select value={grupoId} onChange={(e) => setGrupoId(e.target.value)} style={styles.input} required>
-            <option value="">{grupos.length ? "Selecione o grupo" : "Nenhum grupo encontrado"}</option>
-            {grupos.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.nome}
-              </option>
-            ))}
-          </select>
+          {perfil.grupo_id != null ? (
+            <input
+              value={grupos[0]?.nome ?? "Grupo do usuario"}
+              style={{ ...styles.input, color: "#9ca3af" }}
+              disabled
+            />
+          ) : (
+            <select value={grupoId} onChange={(e) => setGrupoId(e.target.value)} style={styles.input} required>
+              <option value="">{grupos.length ? "Selecione o grupo" : "Nenhum grupo encontrado"}</option>
+              {grupos.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.nome}
+                </option>
+              ))}
+            </select>
+          )}
           {erroGrupos && <div style={{ fontSize: 12, color: "#f97316", marginTop: 4 }}>{erroGrupos}</div>}
         </div>
 

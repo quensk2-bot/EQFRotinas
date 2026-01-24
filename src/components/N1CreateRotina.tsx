@@ -43,7 +43,7 @@ type GrupoOption = {
   nome: string;
   departamento_id: number;
   setor_id: number;
-  regional_id: number;
+  regional_id: number | null;
   ativo: boolean;
 };
 
@@ -258,7 +258,6 @@ export function N1CreateRotina({ perfil }: Props) {
 
       if (perfil.departamento_id != null) q = q.eq("departamento_id", perfil.departamento_id);
       if (perfil.setor_id != null) q = q.eq("setor_id", perfil.setor_id);
-      if (perfil.regional_id != null) q = q.eq("regional_id", perfil.regional_id);
 
       const { data, error } = await q.order("titulo", { ascending: true });
       if (error) {
@@ -289,7 +288,6 @@ export function N1CreateRotina({ perfil }: Props) {
         .eq("departamento_id", perfil.departamento_id)
         .eq("setor_id", perfil.setor_id);
 
-      if (perfil.regional_id != null) q = q.eq("regional_id", perfil.regional_id);
 
       const { data, error } = await q.order("nome", { ascending: true });
       if (error) {

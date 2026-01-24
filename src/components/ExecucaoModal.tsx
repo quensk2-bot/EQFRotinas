@@ -70,7 +70,7 @@ export function ExecucaoModal({ open, rotinaId, perfil, onClose }: Props) {
   const execRef = useRef<Execucao | null>(null);
   const [lastSyncAt, setLastSyncAt] = useState<number>(0);
 
-  // sincroniza execu��ǜo ao voltar para a aba para evitar saltos do cron��metro
+  // sincroniza execucao ao voltar para a aba para evitar saltos do cronometro
   useEffect(() => {
     if (!open) return;
     const onVisible = async () => {

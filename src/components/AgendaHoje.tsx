@@ -10,7 +10,7 @@ type ModoAgenda = "dia" | "7dias";
 type Props = {
   perfil: Usuario;
   filtroInicial?: FiltroAgenda;
-  // Se false, nÇœo auto-scrolla atÇ¸ a hora atual ao carregar (evita pular a pÇágina quando embutido em dashboards).
+  // Se false, nao auto-scrolla ate a hora atual ao carregar (evita pular a pagina quando embutido em dashboards).
   autoScrollToHour?: boolean;
   onAbrirExecucao: (rotina: any) => void;
 };
@@ -189,6 +189,8 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
   // ✅ mapa id->nome p/ exibir no card
   const [usuarioNomeMap, setUsuarioNomeMap] = useState<Record<string, string>>({});
   const [usuarioNivelMap, setUsuarioNivelMap] = useState<Record<string, string>>({});
+  const [usuarioRegionalMap, setUsuarioRegionalMap] = useState<Record<string, number | null>>({});
+  const [usuarioGrupoMap, setUsuarioGrupoMap] = useState<Record<string, number | null>>({});
 
   const podeFiltrarRegional = perfil.nivel === "N1"; // ✅ N2 escondido
   const podeFiltrarUsuario = perfil.nivel === "N1" || perfil.nivel === "N2";
@@ -257,7 +259,6 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
         if (perfil.setor_id) uq = uq.eq("setor_id", perfil.setor_id);
         uq = uq.eq("grupo_id", Number(filtroGrupo));
 
-        // ✅ N2: trava na própria regional
         if (perfil.nivel === "N2" && perfil.regional_id) uq = uq.eq("regional_id", perfil.regional_id);
 
         // ✅ N1: se escolheu uma regional, filtra usuários por ela
@@ -272,12 +273,18 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
 
           const map: Record<string, string> = {};
           const mapNivel: Record<string, string> = {};
+          const mapRegional: Record<string, number | null> = {};
+          const mapGrupo: Record<string, number | null> = {};
           for (const u of data as any[]) {
             map[String(u.id)] = String(u.nome);
             mapNivel[String(u.id)] = String(u.nivel ?? "");
+            mapRegional[String(u.id)] = u.regional_id != null ? Number(u.regional_id) : null;
+            mapGrupo[String(u.id)] = u.grupo_id != null ? Number(u.grupo_id) : null;
           }
           setUsuarioNomeMap((prev) => ({ ...prev, ...map }));
           setUsuarioNivelMap((prev) => ({ ...prev, ...mapNivel }));
+          setUsuarioRegionalMap((prev) => ({ ...prev, ...mapRegional }));
+          setUsuarioGrupoMap((prev) => ({ ...prev, ...mapGrupo }));
 
           // se usuário filtrado não está na lista (troca regional), reseta
           if (filtroUsuario !== "todos" && !list.some((x) => x.id === filtroUsuario)) setFiltroUsuario("todos");
@@ -314,11 +321,7 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
         if (perfil.departamento_id) gq = gq.eq("departamento_id", perfil.departamento_id);
         if (perfil.setor_id) gq = gq.eq("setor_id", perfil.setor_id);
 
-        // ✅ N2: trava na própria regional
-        if (perfil.nivel === "N2" && perfil.regional_id) gq = gq.eq("regional_id", perfil.regional_id);
 
-        // ✅ N1: se escolheu uma regional, filtra grupos por ela
-        if (perfil.nivel === "N1" && filtroRegional !== "todas") gq = gq.eq("regional_id", filtroRegional);
 
         const { data, error } = await gq;
         if (!error && data) {
@@ -377,6 +380,17 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
               ].join(",")
         );
 
+
+      const grupoAtual = perfil.grupo_id ? grupos.find((g) => g.id === perfil.grupo_id) : null;
+      const grupoTemRegional = grupoAtual?.regional_id != null;
+
+      // base por grupo/regional do usuario (N2/N3)
+      if ((perfil.nivel === "N2" || perfil.nivel === "N3") && perfil.grupo_id) {
+        q = q.eq("grupo_id", perfil.grupo_id);
+      }
+      if ((perfil.nivel === "N2" || perfil.nivel === "N3") && perfil.regional_id && grupoTemRegional) {
+        q = q.eq("regional_id", perfil.regional_id);
+      }
       // ✅ filtro hierárquico base (não mexer)
       if (filtro === "minhas") {
         q = q.eq("responsavel_id", perfil.id);
@@ -384,7 +398,7 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
         if (perfil.nivel === "N2") {
           if (perfil.departamento_id) q = q.eq("departamento_id", perfil.departamento_id);
           if (perfil.setor_id) q = q.eq("setor_id", perfil.setor_id);
-          if (perfil.regional_id) q = q.eq("regional_id", perfil.regional_id);
+          if (perfil.regional_id && grupoTemRegional) q = q.eq("regional_id", perfil.regional_id);
         } else if (perfil.nivel === "N1") {
           if (perfil.departamento_id) q = q.eq("departamento_id", perfil.departamento_id);
           if (perfil.setor_id) q = q.eq("setor_id", perfil.setor_id);
@@ -425,9 +439,16 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
       if (perfil.nivel === "N3") {
         rotinas = rotinas.filter((r) => r.responsavel_id === perfil.id);
       } else if (perfil.nivel === "N2") {
-        rotinas = rotinas.filter(
-          (r) => r.responsavel_id === perfil.id || usuarioNivelMap[r.responsavel_id] === "N3"
-        );
+        rotinas = rotinas.filter((r) => {
+          if (r.responsavel_id === perfil.id) return true;
+          if (usuarioNivelMap[r.responsavel_id] !== "N3") return false;
+          const regOk =
+            perfil.regional_id == null ||
+            usuarioRegionalMap[r.responsavel_id] === perfil.regional_id;
+          const grpOk =
+            perfil.grupo_id == null || usuarioGrupoMap[r.responsavel_id] === perfil.grupo_id;
+          return regOk && grpOk;
+        });
       }
 
       // N2 não enxerga rotinas cujo responsável é N1
@@ -457,16 +478,25 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
         const ids = Array.from(new Set(rotinas.map((r) => r.responsavel_id).filter(Boolean)));
         const faltantes = ids.filter((id) => !usuarioNomeMap[id]);
         if (faltantes.length) {
-          const { data: uData } = await supabase.from(USUARIOS_TABLE).select("id,nome,nivel").in("id", faltantes as any);
+          const { data: uData } = await supabase
+            .from(USUARIOS_TABLE)
+            .select("id,nome,nivel,regional_id,grupo_id")
+            .in("id", faltantes as any);
           if (uData) {
             const add: Record<string, string> = {};
             const addNivel: Record<string, string> = {};
+            const addRegional: Record<string, number | null> = {};
+            const addGrupo: Record<string, number | null> = {};
             for (const u of uData as any[]) {
               add[String(u.id)] = String(u.nome);
               addNivel[String(u.id)] = String(u.nivel ?? "");
+              addRegional[String(u.id)] = u.regional_id != null ? Number(u.regional_id) : null;
+              addGrupo[String(u.id)] = u.grupo_id != null ? Number(u.grupo_id) : null;
             }
             setUsuarioNomeMap((prev) => ({ ...prev, ...add }));
             setUsuarioNivelMap((prev) => ({ ...prev, ...addNivel }));
+            setUsuarioRegionalMap((prev) => ({ ...prev, ...addRegional }));
+            setUsuarioGrupoMap((prev) => ({ ...prev, ...addGrupo }));
           }
         }
       } catch {
@@ -493,7 +523,7 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
         const { data: execsData, error: execErr } = await supabase
           .from("rotina_execucoes")
           .select("id,rotina_id,executor_id,created_at,inicio_em,pausado_em,finalizado_em")
-          .in("rotina_id", rotinaIds.length ? rotinaIds : ["__none__"])
+          .in("rotina_id", rotinaIds.length ? rotinaIds : ["00000000-0000-0000-0000-000000000000"])
           .gte("created_at", startOfDayLocalToUTC(dataIni))
           .lt("created_at", endOfDayLocalToUTCExclusive(dataFim))
           .order("id", { ascending: false });
@@ -1254,6 +1284,10 @@ export function AgendaHoje({ perfil, filtroInicial, autoScrollToHour = true, onA
     </div>
   );
 }
+
+
+
+
 
 
 

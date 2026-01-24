@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import type { Usuario, RotinaPadrao, ChecklistItemPadrao } from "../types";
 import { styles, theme } from "../styles";
+import { criarRotinasAutomaticasParaUsuario, type RotinaPadraoAuto, type UsuarioAuto } from "../lib/rotinasAutoCreate";
 
 type Props = {
   usuarioLogado: Usuario;
@@ -15,7 +16,15 @@ type GrupoOption = {
   nome: string;
   departamento_id: number;
   setor_id: number;
-  regional_id: number;
+  regional_id: number | null;
+  ativo: boolean;
+};
+
+type RegionalOption = {
+  id: number;
+  nome: string;
+  sigla: string | null;
+  setor_id: number;
   ativo: boolean;
 };
 
@@ -42,6 +51,8 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
   const [horarioPadrao, setHorarioPadrao] = useState("08:00");
   const [periodicidade, setPeriodicidade] = useState<Periodicidade>("diaria");
   const [diasSemanaPadrao, setDiasSemanaPadrao] = useState<string[]>([]);
+  const [dataInicio, setDataInicio] = useState<string>("");
+  const [dataFim, setDataFim] = useState<string>("");
 
   const [checklist, setChecklist] = useState<ChecklistItemPadrao[]>([
     emptyChecklistItem(1),
@@ -58,6 +69,9 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
   const [grupos, setGrupos] = useState<GrupoOption[]>([]);
   const [grupoId, setGrupoId] = useState<string>("");
   const [gruposErro, setGruposErro] = useState<string | null>(null);
+  const [regionais, setRegionais] = useState<RegionalOption[]>([]);
+  const [regionaisErro, setRegionaisErro] = useState<string | null>(null);
+  const [regionaisSelecionadas, setRegionaisSelecionadas] = useState<string[]>([]);
 
   const isN1 = usuarioLogado.nivel === "N1";
   const deptId = usuarioLogado.departamento_id ?? null;
@@ -97,8 +111,6 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
         .eq("departamento_id", deptId!)
         .eq("setor_id", setorId!);
 
-      if (usuarioLogado.regional_id != null) q = q.eq("regional_id", usuarioLogado.regional_id);
-
       const { data, error } = await q.order("nome", { ascending: true });
 
       if (error) {
@@ -122,6 +134,32 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
     }
   }
 
+  async function carregarRegionais() {
+    if (!podeUsar) {
+      setRegionais([]);
+      setRegionaisSelecionadas([]);
+      setRegionaisErro("N1 sem departamento/setor definido.");
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("regionais")
+        .select("id, nome, sigla, setor_id, ativo")
+        .eq("setor_id", setorId!)
+        .order("nome", { ascending: true });
+
+      if (error) throw error;
+
+      const ativos = (data ?? []).filter((r: any) => r.ativo !== false) as RegionalOption[];
+      setRegionais(ativos);
+      setRegionaisErro(ativos.length ? null : "Nenhuma regional ativa encontrada.");
+    } catch {
+      setRegionaisErro("Erro inesperado ao carregar regionais.");
+      setRegionais([]);
+    }
+  }
+
   // Carregar modelos (somente do dept/setor do N1)
   async function carregarModelos() {
     if (!podeUsar) {
@@ -140,7 +178,8 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
           arquivo_modelo_nome, arquivo_modelo_url,
           exige_anexos, tem_checklist, tem_anexo,
           criado_por_id, criado_em, atualizado_em,
-          departamento_id, setor_id, grupo_id
+          departamento_id, setor_id, grupo_id, regionais_ids,
+          data_inicio, data_fim
         `
         )
         .eq("departamento_id", deptId!)
@@ -160,6 +199,7 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
 
   useEffect(() => {
     void carregarGrupos();
+    void carregarRegionais();
     void carregarModelos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -184,11 +224,14 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
     setHorarioPadrao("08:00");
     setPeriodicidade("diaria");
     setDiasSemanaPadrao([]);
+    setDataInicio("");
+    setDataFim("");
     setChecklist([emptyChecklistItem(1)]);
     setArquivoModeloNome("");
     setArquivoModeloUrl("");
     setExigeAnexos(false);
     setSubindoArquivo(false);
+    setRegionaisSelecionadas([]);
     setGrupoId((prev) => {
       if (prev && grupos.some((g) => String(g.id) === String(prev))) return prev;
       return grupos[0] ? String(grupos[0].id) : "";
@@ -265,6 +308,10 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
 
     setExigeAnexos(!!(modelo as any).exige_anexos);
     setGrupoId((modelo as any).grupo_id ? String((modelo as any).grupo_id) : "");
+    const regs = (modelo as any).regionais_ids ?? null;
+    setRegionaisSelecionadas(Array.isArray(regs) ? regs.map(String) : []);
+    setDataInicio((modelo as any).data_inicio ?? "");
+    setDataFim((modelo as any).data_fim ?? "");
   }
 
   async function excluirModelo() {
@@ -300,6 +347,10 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
     }
     if (["semanal", "quinzenal"].includes(periodicidade) && diasSemanaPadrao.length === 0) {
       alert("Selecione pelo menos um dia da semana.");
+      return;
+    }
+    if (dataInicio && dataFim && dataFim < dataInicio) {
+      alert("Data fim nao pode ser menor que a data inicio.");
       return;
     }
     if (!podeUsar) {
@@ -338,22 +389,86 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
       departamento_id: deptId,
       setor_id: setorId,
       grupo_id: Number(grupoId),
+      regionais_ids: regionaisSelecionadas.length
+        ? regionaisSelecionadas.map((id) => Number(id))
+        : null,
+      data_inicio: dataInicio || null,
+      data_fim: dataFim || null,
     };
 
+    let autoMsg: string | null = null;
     setLoading(true);
     try {
       if (editando) {
         const { error } = await supabase.from("rotinas_padrao").update(payload).eq("id", editando.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase
+        const { data: novoModelo, error } = await supabase
           .from("rotinas_padrao")
-          .insert({ ...payload, criado_por_id: usuarioLogado.id });
+          .insert({ ...payload, criado_por_id: usuarioLogado.id })
+          .select(
+            "id, titulo, descricao, sugestao_duracao_minutos, horario_inicio, periodicidade, dia_semana, tem_checklist, tem_anexo, departamento_id, setor_id, grupo_id, regionais_ids, data_inicio, data_fim"
+          )
+          .single();
         if (error) throw error;
+
+        if (novoModelo && grupoId) {
+          const { data: usuarios, error: usuariosError } = await supabase
+            .from("usuarios")
+            .select("id, nivel, departamento_id, setor_id, regional_id, grupo_id, ativo")
+            .eq("grupo_id", Number(grupoId))
+            .eq("departamento_id", deptId)
+            .eq("setor_id", setorId)
+            .eq("ativo", true)
+            .in("nivel", ["N2", "N3"] as any);
+
+          if (usuariosError) {
+            console.error("Erro ao carregar usuarios do grupo:", usuariosError.message);
+            autoMsg = "Modelo salvo. Erro ao carregar usuarios do grupo.";
+          } else if (usuarios && usuarios.length > 0) {
+            const regionaisFiltro = regionaisSelecionadas.map((id) => Number(id));
+            const usuariosFiltrados =
+              regionaisFiltro.length > 0
+                ? usuarios.filter(
+                    (u: any) =>
+                      u.regional_id != null && regionaisFiltro.includes(Number(u.regional_id))
+                  )
+                : usuarios;
+            let totalRotinas = 0;
+            let totalErros = 0;
+            const erros: string[] = [];
+            const grupoInfo = grupos.find((g) => String(g.id) === String(grupoId)) ?? null;
+            const grupoRegionalId = grupoInfo?.regional_id ?? null;
+            for (const u of usuariosFiltrados) {
+              const result = await criarRotinasAutomaticasParaUsuario({
+                modelos: [novoModelo as RotinaPadraoAuto],
+                usuario: u as UsuarioAuto,
+                criadorId: usuarioLogado.id,
+                grupoRegionalId,
+              });
+              totalRotinas += result.ok;
+              totalErros += result.erros.length;
+              if (result.erros.length) erros.push(...result.erros);
+            }
+            if (totalErros > 0) {
+              console.error("Erros ao gerar rotinas:", erros);
+              const preview = erros.slice(0, 3).join(" | ");
+              autoMsg = `Modelo salvo. Rotinas geradas: ${totalRotinas}. Erros: ${totalErros}. ${preview}`;
+            } else {
+              autoMsg = `Modelo salvo. Rotinas geradas: ${totalRotinas}.`;
+            }
+          } else {
+            autoMsg = "Modelo salvo. Nenhum usuario do grupo encontrado.";
+          }
+        }
       }
 
       await carregarModelos();
       resetForm();
+      if (!editando) {
+        alert(autoMsg ?? "Modelo salvo com sucesso!");
+        return;
+      }
       alert("Modelo salvo com sucesso!");
     } catch (err) {
       console.error("Erro ao salvar modelo:", err);
@@ -473,6 +588,67 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
         </div>
 
         <div>
+          <label style={styles.label}>Regionais/UFs (opcional)</label>
+          <div
+            style={{
+              border: `1px solid ${theme.colors.borderSoft}`,
+              borderRadius: 10,
+              padding: 8,
+              display: "grid",
+              gap: 6,
+              color: "#e5e7eb",
+            }}
+          >
+            {regionais.length === 0 && (
+              <div style={{ fontSize: 12, color: theme.colors.textMuted }}>
+                {regionaisErro || "Nenhuma regional encontrada."}
+              </div>
+            )}
+
+            {regionais.length > 0 && (
+              <>
+                <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={regionaisSelecionadas.length === 0}
+                    onChange={(e) => {
+                      if (e.target.checked) setRegionaisSelecionadas([]);
+                    }}
+                    disabled={!podeUsar}
+                  />
+                  Todas as regionais
+                </label>
+
+                {regionais.map((r) => {
+                  const label = r.sigla ? `${r.nome} (${r.sigla})` : r.nome;
+                  const checked = regionaisSelecionadas.includes(String(r.id));
+                  return (
+                    <label key={r.id} style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12 }}>
+                      <input
+                        type="checkbox"
+                        disabled={!podeUsar}
+                        checked={checked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setRegionaisSelecionadas((curr) => Array.from(new Set([...curr, String(r.id)])));
+                          } else {
+                            setRegionaisSelecionadas((curr) => curr.filter((x) => x !== String(r.id)));
+                          }
+                        }}
+                      />
+                      {label}
+                    </label>
+                  );
+                })}
+              </>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: theme.colors.textMuted, marginTop: 4 }}>
+            Se nao selecionar nenhuma, a rotina vale para todas as regionais.
+          </div>
+        </div>
+
+        <div>
           <label style={styles.label}>Título da rotina padrão</label>
           <input
             value={titulo}
@@ -495,7 +671,7 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
           <div>
-            <label style={styles.label}>Sugestão de duração (minutos)</label>
+            <label style={styles.label}>Sugestao de duracao (minutos)</label>
             <input
               type="number"
               value={sugestaoDuracao}
@@ -516,18 +692,42 @@ export const RotinasPadraoPage: React.FC<Props> = ({ usuarioLogado }) => {
             />
           </div>
           <div>
-            <label style={styles.label}>Periodicidade padrão</label>
+            <label style={styles.label}>Periodicidade padrao</label>
             <select
               value={periodicidade}
               onChange={(e) => setPeriodicidade(e.target.value as Periodicidade)}
               style={styles.input}
               disabled={!podeUsar}
             >
-              <option value="diaria">Diária</option>
+              <option value="diaria">Diaria</option>
               <option value="semanal">Semanal</option>
               <option value="quinzenal">Quinzenal (2x mes)</option>
               <option value="mensal">Mensal</option>
             </select>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={styles.label}>Data de inicio (opcional)</label>
+            <input
+              type="date"
+              value={dataInicio}
+              onChange={(e) => setDataInicio(e.target.value)}
+              style={styles.input}
+              disabled={!podeUsar}
+            />
+          </div>
+          <div>
+            <label style={styles.label}>Data de fim (opcional)</label>
+            <input
+              type="date"
+              value={dataFim}
+              onChange={(e) => setDataFim(e.target.value)}
+              style={styles.input}
+              min={dataInicio || undefined}
+              disabled={!podeUsar}
+            />
           </div>
         </div>
 

@@ -3,6 +3,7 @@ import type React from "react";
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { theme } from "../styles";
+import { criarRotinasAutomaticasParaUsuario, type RotinaPadraoAuto, type UsuarioAuto } from "../lib/rotinasAutoCreate";
 import type { Usuario } from "../types";
 
 type NivelUsuario = Usuario["nivel"]; // 'ADM' | 'N0' | 'N1' | 'N2' | 'N3' | 'N99'
@@ -45,8 +46,7 @@ const adminStyles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: "100vh",
     width: "100vw",
-    background:
-      "radial-gradient(circle at top, #020617 0, #020617 55%, #000 100%)",
+    background: theme.colors.appBackground,
     color: theme.colors.text,
     padding: "24px 0",
     boxSizing: "border-box",
@@ -91,7 +91,7 @@ const adminStyles: Record<string, React.CSSProperties> = {
     padding: "8px 16px",
     fontSize: 13,
     cursor: "pointer",
-    background: theme.colors.bgSoft,
+    background: theme.colors.cardBgSoft,
     color: theme.colors.textSoft,
   },
 
@@ -106,15 +106,15 @@ const adminStyles: Record<string, React.CSSProperties> = {
     padding: "8px 14px",
     borderRadius: 999,
     border: `1px solid ${theme.colors.borderSoft}`,
-    background: theme.colors.bgSoft,
+    background: theme.colors.cardBgSoft,
     color: theme.colors.textSoft,
     fontSize: 13,
     cursor: "pointer",
   },
   tabActive: {
-    background: theme.colors.neon,
-    borderColor: theme.colors.neon,
-    color: "#000",
+    background: theme.colors.neonGreen,
+    borderColor: theme.colors.neonGreen,
+    color: "#022c22",
     fontWeight: 600,
   },
   section: {
@@ -124,10 +124,10 @@ const adminStyles: Record<string, React.CSSProperties> = {
     marginTop: 12,
   },
   card: {
-    background: theme.colors.bgElevated,
+    background: theme.colors.cardBg,
     borderRadius: theme.radius.lg,
     border: `1px solid ${theme.colors.borderSoft}`,
-    boxShadow: "0 18px 40px rgba(0,0,0,0.7)", // ⬅ aqui
+    boxShadow: theme.shadows.medium,
     padding: 20,
   },
   cardHeaderRow: {
@@ -145,7 +145,7 @@ const adminStyles: Record<string, React.CSSProperties> = {
     padding: "2px 10px",
     borderRadius: 999,
     fontSize: 11,
-    background: "#111827",
+    background: theme.colors.bgSoft,
     color: theme.colors.textMuted,
   },
   formGrid: {
@@ -163,7 +163,7 @@ const adminStyles: Record<string, React.CSSProperties> = {
     color: theme.colors.textSoft,
   },
   input: {
-    background: theme.colors.bgSoft,
+    background: theme.colors.bgElevated,
     borderRadius: theme.radius.md,
     border: `1px solid ${theme.colors.borderSoft}`,
     padding: "8px 10px",
@@ -172,7 +172,7 @@ const adminStyles: Record<string, React.CSSProperties> = {
     outline: "none",
   },
   select: {
-    background: theme.colors.bgSoft,
+    background: theme.colors.bgElevated,
     borderRadius: theme.radius.md,
     border: `1px solid ${theme.colors.borderSoft}`,
     padding: "8px 10px",
@@ -200,17 +200,17 @@ const adminStyles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontWeight: 600,
     cursor: "pointer",
-    background: theme.colors.neon,
-    color: "#000",
+    background: theme.colors.neonGreen,
+    color: "#022c22",
   },
   btnSecondary: {
     borderRadius: 999,
-    border: `1px solid ${theme.colors.neon}`,
+    border: `1px solid ${theme.colors.neonGreen}`,
     padding: "8px 16px",
     fontSize: 13,
     cursor: "pointer",
     background: "transparent",
-    color: theme.colors.neon,
+    color: theme.colors.neonGreen,
   },
   tableWrap: {
     width: "100%",
@@ -250,7 +250,7 @@ const adminStyles: Record<string, React.CSSProperties> = {
     padding: "2px 10px",
     borderRadius: 999,
     fontSize: 11,
-    background: "#111827",
+    background: theme.colors.bgSoft,
     color: theme.colors.textMuted,
   },
   tableActions: {
@@ -567,6 +567,64 @@ export default function AdminPage() {
             : "Erro ao criar usuário.";
         setErroNovoUsuario(msg);
       } else {
+        let usuarioCriado: UsuarioAuto | null = null;
+        const { data: userData, error: userError } = await supabase
+          .from("usuarios")
+          .select("id, nivel, departamento_id, setor_id, regional_id, grupo_id")
+          .eq("email", payload.email)
+          .single();
+
+        if (userError) {
+          console.error("Erro ao buscar usuario criado:", userError.message);
+        } else {
+          usuarioCriado = userData as UsuarioAuto;
+        }
+
+        if (
+          usuarioCriado &&
+          usuarioCriado.grupo_id &&
+          (usuarioCriado.nivel === "N2" || usuarioCriado.nivel === "N3")
+        ) {
+          const { data: modelos, error: modelosError } = await supabase
+            .from("rotinas_padrao")
+            .select(
+              "id, titulo, descricao, sugestao_duracao_minutos, horario_inicio, periodicidade, dia_semana, tem_checklist, tem_anexo, departamento_id, setor_id, grupo_id, regionais_ids"
+            )
+            .eq("grupo_id", usuarioCriado.grupo_id)
+            .eq("departamento_id", usuarioCriado.departamento_id)
+            .eq("setor_id", usuarioCriado.setor_id);
+
+          if (modelosError) {
+            console.error("Erro ao carregar modelos para o grupo:", modelosError.message);
+          } else if (modelos && modelos.length > 0) {
+            const modelosFiltrados = (modelos as RotinaPadraoAuto[]).filter((m) => {
+              if (!Array.isArray(m.regionais_ids) || m.regionais_ids.length === 0) return true;
+              if (usuarioCriado.regional_id == null) return false;
+              const regionais = m.regionais_ids
+                .map((id) => Number(id))
+                .filter((id) => Number.isFinite(id));
+              return regionais.includes(usuarioCriado.regional_id);
+            });
+            const grupoInfo = grupos.find((g) => g.id === usuarioCriado?.grupo_id) ?? null;
+            const grupoRegionalId = grupoInfo?.regional_id ?? null;
+            const { data: authData } = await supabase.auth.getUser();
+            const criadorId = authData?.user?.id ?? null;
+            const resultado = await criarRotinasAutomaticasParaUsuario({
+              modelos: modelosFiltrados,
+              usuario: usuarioCriado,
+              criadorId,
+              grupoRegionalId,
+            });
+            if (resultado.erros.length > 0) {
+              console.error("Erros ao gerar rotinas:", resultado.erros);
+              const preview = resultado.erros.slice(0, 3).join(" | ");
+              setErroNovoUsuario(
+                `Usuario criado, mas houve erro ao gerar rotinas automaticas. ${preview}`
+              );
+            }
+          }
+        }
+
         setNovoUsuario({
           nome: "",
           email: "",
@@ -939,15 +997,10 @@ export default function AdminPage() {
       alert("Selecione o setor do grupo.");
       return;
     }
-    if (!formGrupo.regional_id) {
-      alert("Selecione a regional do grupo.");
-      return;
-    }
-
     const payload = {
       departamento_id: Number(formGrupo.departamento_id),
       setor_id: Number(formGrupo.setor_id),
-      regional_id: Number(formGrupo.regional_id),
+      regional_id: formGrupo.regional_id === "" ? null : Number(formGrupo.regional_id),
       nome: formGrupo.nome.trim(),
       ativo: formGrupo.ativo,
     };
@@ -959,14 +1012,14 @@ export default function AdminPage() {
         .eq("id", editGrupoId);
       if (error) {
         console.error("Erro ao atualizar grupo:", error.message);
-        alert("Erro ao atualizar grupo.");
+        alert(`Erro ao atualizar grupo: ${error.message}`);
         return;
       }
     } else {
       const { error } = await supabase.from("grupos").insert(payload);
       if (error) {
         console.error("Erro ao criar grupo:", error.message);
-        alert("Erro ao criar grupo.");
+        alert(`Erro ao criar grupo: ${error.message}`);
         return;
       }
     }
@@ -1038,7 +1091,7 @@ export default function AdminPage() {
             }}
             onClick={() => setAbaAtiva("estrutura")}
           >
-            Estrutura (Dept / Setor / Regional / Grupo)
+            Estrutura (Dept / Setor / Regional / Grupo unico)
           </button>
 
           <button
@@ -1242,12 +1295,6 @@ export default function AdminPage() {
                             !novoUsuario.setor_id ||
                             g.setor_id === Number(novoUsuario.setor_id),
                         )
-                        .filter(
-                          (g) =>
-                            !novoUsuario.regional_id ||
-                            g.regional_id ===
-                              Number(novoUsuario.regional_id),
-                        )
                         .map((g) => (
                           <option key={g.id} value={g.id}>
                             {g.nome}
@@ -1431,12 +1478,6 @@ export default function AdminPage() {
                           (g) =>
                             !formUsuario.setor_id ||
                             g.setor_id === Number(formUsuario.setor_id),
-                        )
-                        .filter(
-                          (g) =>
-                            !formUsuario.regional_id ||
-                            g.regional_id ===
-                              Number(formUsuario.regional_id),
                         )
                         .map((g) => (
                           <option key={g.id} value={g.id}>
@@ -2040,6 +2081,9 @@ export default function AdminPage() {
               <div style={adminStyles.cardHeaderRow}>
                 <h2 style={adminStyles.cardTitle}>Grupos ({grupos.length})</h2>
               </div>
+              <div style={{ fontSize: 12, color: theme.colors.textMuted, marginBottom: 10 }}>
+                Grupo agora e unico por departamento/setor. Regional e opcional para uso especifico.
+              </div>
 
               <form onSubmit={salvarGrupo}>
                 <div style={adminStyles.formGrid}>
@@ -2096,7 +2140,7 @@ export default function AdminPage() {
                   </div>
 
                   <div style={adminStyles.formGroup}>
-                    <label style={adminStyles.label}>Regional</label>
+                    <label style={adminStyles.label}>Regional (opcional)</label>
                     <select
                       value={formGrupo.regional_id}
                       onChange={(e) =>
@@ -2107,7 +2151,7 @@ export default function AdminPage() {
                       }
                       style={adminStyles.select}
                     >
-                      <option value="">– Selecione –</option>
+                      <option value="">Nenhuma</option>
                       {regionais
                         .filter(
                           (r) =>

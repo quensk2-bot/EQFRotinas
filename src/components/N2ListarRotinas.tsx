@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import type { Usuario } from "../types";
 import { styles, theme } from "../styles";
+import N2CriarRotina from "./N2CriarRotina";
 
 type Props = {
   perfil: Usuario;
@@ -69,7 +70,7 @@ export function N2ListarRotinas({ perfil, onAbrirExecucao }: Props) {
     setErro(null);
 
     try {
-      const { data, error } = await supabase
+      let q = supabase
         .from("rotinas")
         .select(
           `
@@ -95,10 +96,13 @@ export function N2ListarRotinas({ perfil, onAbrirExecucao }: Props) {
             nivel
           )
         `
-        )
-        .eq("regional_id", perfil.regional_id)
-        .order("data_inicio", { ascending: true })
-        .order("horario_inicio", { ascending: true });
+        );
+
+      if (perfil.departamento_id) q = q.eq("departamento_id", perfil.departamento_id);
+      if (perfil.setor_id) q = q.eq("setor_id", perfil.setor_id);
+      if (perfil.regional_id) q = q.eq("regional_id", perfil.regional_id);
+
+      const { data, error } = await q.order("data_inicio", { ascending: true }).order("horario_inicio", { ascending: true });
 
       if (error) throw error;
 
@@ -129,7 +133,11 @@ export function N2ListarRotinas({ perfil, onAbrirExecucao }: Props) {
         responsavel_nivel: r.responsavel?.nivel ?? null,
       }));
 
-      setRotinas(lista);
+      const filtradas = lista.filter((r) => {
+        if (r.responsavel_id === perfil.id) return true;
+        return r.responsavel_nivel === "N3";
+      });
+      setRotinas(filtradas);
     } catch (e: any) {
       console.error("Erro ao carregar rotinas N2:", e);
       setErro(e.message ?? String(e));
@@ -162,6 +170,9 @@ export function N2ListarRotinas({ perfil, onAbrirExecucao }: Props) {
   // ------------------------------------------------------------------
   return (
     <section>
+      <div style={{ marginBottom: 16 }}>
+        <N2CriarRotina usuarioLogado={perfil} />
+      </div>
       <h2 style={{ marginTop: 0, color: theme.colors.neonGreen }}>
         Rotinas & Execução – Nível 2
       </h2>

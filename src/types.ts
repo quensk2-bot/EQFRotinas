@@ -37,6 +37,9 @@ export type RotinaPadrao = {
   sugestao_duracao_minutos: number | null;
   horario_inicio?: string | null;
   dia_semana?: string | null;
+  regionais_ids?: number[] | null;
+  data_inicio?: string | null;
+  data_fim?: string | null;
 
   periodicidade: "diaria" | "semanal" | "quinzenal" | "mensal";
 

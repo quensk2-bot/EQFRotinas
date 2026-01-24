@@ -37,11 +37,14 @@ type Execucao = {
   inicio_em: string | null;
   pausado_em: string | null;
   finalizado_em: string | null;
+  pausado_total_segundos?: number | null;
   duracao_total_segundos?: number | null;
   departamento_id?: number | null;
   setor_id?: number | null;
   regional_id?: number | null;
 };
+
+type KpiView = "resumo" | "tempo";
 
 type KpiResumo = {
   periodo: Periodo;
@@ -57,6 +60,18 @@ type KpiResumo = {
   tempoExecutadoSeg: number; // soma somente das finalizadas (duracao_total_segundos OU diff timestamps)
 
   taxaExecucaoPct: number | null;
+};
+
+type TempoResumo = {
+  execucoesTotal: number;
+  finalizadasTotal: number;
+  tempoExecMedioSeg: number | null;
+  tempoPausaTotalSeg: number;
+  tempoPausaMedioSeg: number | null;
+  pctComPausa: number | null;
+  atrasoInicioMedioSeg: number | null;
+  onTimePct: number | null;
+  leadTimeMedioSeg: number | null;
 };
 
 const styles: Record<string, React.CSSProperties> = {
@@ -301,10 +316,12 @@ function labelEscopo(perfil: Usuario) {
 
 export const KpiPageV14: React.FC<Props> = ({ perfil }) => {
   const [periodo, setPeriodo] = useState<Periodo>("30D");
+  const [view, setView] = useState<KpiView>("resumo");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   const [resumo, setResumo] = useState<KpiResumo | null>(null);
+  const [tempoResumo, setTempoResumo] = useState<TempoResumo | null>(null);
 
   const [detalheDias, setDetalheDias] = useState<
     { dia: string; planejadas: number; finalizadas: number; tempoPlanSeg: number; tempoExecSeg: number }[]
@@ -372,7 +389,7 @@ export const KpiPageV14: React.FC<Props> = ({ perfil }) => {
       let eq = supabase
         .from("rotina_execucoes")
         .select(
-          "id,rotina_id,executor_id,created_at,inicio_em,pausado_em,finalizado_em,duracao_total_segundos,departamento_id,setor_id,regional_id"
+          "id,rotina_id,executor_id,created_at,inicio_em,pausado_em,finalizado_em,pausado_total_segundos,duracao_total_segundos,departamento_id,setor_id,regional_id"
         )
         .gte("created_at", startOfDayLocalToUTC(range.ini))
         .lt("created_at", endOfDayLocalToUTCExclusive(range.fim))
@@ -395,6 +412,8 @@ export const KpiPageV14: React.FC<Props> = ({ perfil }) => {
       if (exErr) throw exErr;
 
       const execucoes = (exData ?? []) as Execucao[];
+      const rotinaById = new Map<string, Rotina>();
+      rotinasBase.forEach((r) => rotinaById.set(r.id, r));
 
       // 4) Indexar execuções por (rotina_id + diaLocal)
       // regra: pega a mais recente por dia (igual você já faz na agenda)
@@ -494,11 +513,56 @@ export const KpiPageV14: React.FC<Props> = ({ perfil }) => {
         taxaExecucaoPct,
       });
 
+      const execFinalizadas = execucoes.filter((e) => !!e.finalizado_em);
+      const execComPausa = execucoes.filter((e) => (e.pausado_total_segundos ?? 0) > 0);
+      const tempoPausaTotalSeg = execComPausa.reduce((acc, e) => acc + (e.pausado_total_segundos ?? 0), 0);
+      const tempoExecTotalSeg = execFinalizadas.reduce((acc, e) => acc + (calcDuracaoExecSeg(e) ?? 0), 0);
+
+      let atrasoInicioTotalSeg = 0;
+      let atrasoInicioCount = 0;
+      let leadTimeTotalSeg = 0;
+      let leadTimeCount = 0;
+      let onTimeCount = 0;
+      const onTimeLimiteSeg = 10 * 60;
+
+      for (const e of execFinalizadas) {
+        const rotina = rotinaById.get(e.rotina_id);
+        if (!rotina || !rotina.horario_inicio) continue;
+        const dataBase = rotina.data_inicio ?? ymdLocal(new Date(e.created_at));
+        const inicioProgramado = new Date(`${dataBase}T${rotina.horario_inicio}:00`);
+        if (e.inicio_em) {
+          const inicioReal = new Date(e.inicio_em);
+          const atrasoSeg = Math.max(0, Math.floor((inicioReal.getTime() - inicioProgramado.getTime()) / 1000));
+          atrasoInicioTotalSeg += atrasoSeg;
+          atrasoInicioCount += 1;
+          if (atrasoSeg <= onTimeLimiteSeg) onTimeCount += 1;
+        }
+        if (e.finalizado_em) {
+          const fimReal = new Date(e.finalizado_em);
+          const leadSeg = Math.max(0, Math.floor((fimReal.getTime() - inicioProgramado.getTime()) / 1000));
+          leadTimeTotalSeg += leadSeg;
+          leadTimeCount += 1;
+        }
+      }
+
+      setTempoResumo({
+        execucoesTotal: execucoes.length,
+        finalizadasTotal: execFinalizadas.length,
+        tempoExecMedioSeg: execFinalizadas.length ? Math.round(tempoExecTotalSeg / execFinalizadas.length) : null,
+        tempoPausaTotalSeg,
+        tempoPausaMedioSeg: execComPausa.length ? Math.round(tempoPausaTotalSeg / execComPausa.length) : null,
+        pctComPausa: execucoes.length ? Math.round((execComPausa.length / execucoes.length) * 1000) / 10 : null,
+        atrasoInicioMedioSeg: atrasoInicioCount ? Math.round(atrasoInicioTotalSeg / atrasoInicioCount) : null,
+        onTimePct: atrasoInicioCount ? Math.round((onTimeCount / atrasoInicioCount) * 1000) / 10 : null,
+        leadTimeMedioSeg: leadTimeCount ? Math.round(leadTimeTotalSeg / leadTimeCount) : null,
+      });
+
       setDetalheDias(detalhe);
     } catch (e: any) {
       console.error(e);
       setErro(e?.message ? String(e.message) : "Erro ao carregar KPI.");
       setResumo(null);
+      setTempoResumo(null);
       setDetalheDias([]);
     } finally {
       setLoading(false);
@@ -606,17 +670,41 @@ export const KpiPageV14: React.FC<Props> = ({ perfil }) => {
           </div>
         </div>
 
-        <div style={styles.chips}>
-          {renderChip("HOJE")}
-          {renderChip("7D")}
-          {renderChip("30D")}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div style={styles.chips}>
+            <button
+              type="button"
+              onClick={() => setView("resumo")}
+              style={{
+                ...styles.chipBtn,
+                ...(view === "resumo" ? styles.chipBtnActive : {}),
+              }}
+            >
+              Visao geral
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("tempo")}
+              style={{
+                ...styles.chipBtn,
+                ...(view === "tempo" ? styles.chipBtnActive : {}),
+              }}
+            >
+              Tempo & Pausas
+            </button>
+          </div>
+          <div style={styles.chips}>
+            {renderChip("HOJE")}
+            {renderChip("7D")}
+            {renderChip("30D")}
+          </div>
         </div>
       </div>
 
       {loading && <div style={styles.info}>Carregando KPIs…</div>}
       {erro && !loading && <div style={styles.warn}>{erro}</div>}
 
-      {!loading && !erro && resumo && (
+      {!loading && !erro && resumo && view === "resumo" && (
         <>
           <div style={styles.grid}>
             {/* Resumo imediato */}
@@ -794,6 +882,78 @@ export const KpiPageV14: React.FC<Props> = ({ perfil }) => {
               </button>
               Observações: Tempo executado só conta quando <strong>finalizado_em</strong> existe. Tempo programado usa{" "}
               <strong>duracao_minutos</strong> e quando estiver null assume <strong>30 minutos</strong>.
+            </div>
+          </div>
+        </>
+      )}
+
+      {!loading && !erro && tempoResumo && view === "tempo" && (
+        <>
+          <div style={styles.grid}>
+            <div style={{ ...styles.card, ...styles.cardSmall }}>
+              <div style={styles.cardTitle}>Execucoes</div>
+              <div style={styles.cardValue}>{tempoResumo.execucoesTotal}</div>
+              <div style={styles.cardAux}>No periodo</div>
+            </div>
+
+            <div style={{ ...styles.card, ...styles.cardSmall }}>
+              <div style={styles.cardTitle}>Finalizadas</div>
+              <div style={styles.cardValue}>{tempoResumo.finalizadasTotal}</div>
+              <div style={styles.cardAux}>Com finalizado_em</div>
+            </div>
+
+            <div style={{ ...styles.card, ...styles.cardSmall }}>
+              <div style={styles.cardTitle}>Tempo medio execucao</div>
+              <div style={styles.cardValue}>
+                {tempoResumo.tempoExecMedioSeg == null ? "-" : formatSeconds(tempoResumo.tempoExecMedioSeg)}
+              </div>
+              <div style={styles.cardAux}>Media por rotina finalizada</div>
+            </div>
+
+            <div style={{ ...styles.card, ...styles.cardSmall }}>
+              <div style={styles.cardTitle}>Tempo medio pausa</div>
+              <div style={styles.cardValue}>
+                {tempoResumo.tempoPausaMedioSeg == null ? "-" : formatSeconds(tempoResumo.tempoPausaMedioSeg)}
+              </div>
+              <div style={styles.cardAux}>Apenas com pausa</div>
+            </div>
+
+            <div style={{ ...styles.card, ...styles.cardSmall }}>
+              <div style={styles.cardTitle}>% com pausa</div>
+              <div style={styles.cardValue}>
+                {tempoResumo.pctComPausa == null ? "-" : String(tempoResumo.pctComPausa) + "%"}
+              </div>
+              <div style={styles.cardAux}>Execucoes com pausa</div>
+            </div>
+
+            <div style={{ ...styles.card, ...styles.cardSmall }}>
+              <div style={styles.cardTitle}>Pausa total</div>
+              <div style={styles.cardValue}>{formatSeconds(tempoResumo.tempoPausaTotalSeg)}</div>
+              <div style={styles.cardAux}>Somatorio do periodo</div>
+            </div>
+
+            <div style={{ ...styles.card, ...styles.cardSmall }}>
+              <div style={styles.cardTitle}>Atraso medio inicio</div>
+              <div style={styles.cardValue}>
+                {tempoResumo.atrasoInicioMedioSeg == null ? "-" : formatSeconds(tempoResumo.atrasoInicioMedioSeg)}
+              </div>
+              <div style={styles.cardAux}>Vs horario programado</div>
+            </div>
+
+            <div style={{ ...styles.card, ...styles.cardSmall }}>
+              <div style={styles.cardTitle}>On-time (&lt;=10m)</div>
+              <div style={styles.cardValue}>
+                {tempoResumo.onTimePct == null ? "-" : String(tempoResumo.onTimePct) + "%"}
+              </div>
+              <div style={styles.cardAux}>Inicio no prazo</div>
+            </div>
+
+            <div style={styles.card}>
+              <div style={styles.cardTitle}>Lead time medio</div>
+              <div style={styles.cardValue}>
+                {tempoResumo.leadTimeMedioSeg == null ? "-" : formatSeconds(tempoResumo.leadTimeMedioSeg)}
+              </div>
+              <div style={styles.cardAux}>Do horario programado ate finalizado_em</div>
             </div>
           </div>
         </>

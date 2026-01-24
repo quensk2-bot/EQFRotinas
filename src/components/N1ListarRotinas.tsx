@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, type FormEvent } from "react";
+﻿import React, { useEffect, useMemo, useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { styles, theme } from "../styles";
 import type { Usuario } from "../types";
@@ -32,7 +32,7 @@ type RotinaRow = {
   setor_id: number | null;
   regional_id: number | null;
 
-  // ✅ PostgREST pode devolver como objeto OU array, dependendo do relacionamento
+  // PostgREST pode devolver como objeto OU array, dependendo do relacionamento
   responsavel?: RespObj | RespObj[] | null;
   regional?: RegionalObj | RegionalObj[] | null;
   setor?: SetorObj | SetorObj[] | null;
@@ -59,15 +59,13 @@ type Responsavel = {
   id: string;
   nome: string;
   nivel: string; // "N2" | "N3"
+  regional_id: number | null;
+  grupo_id: number | null;
 };
 
-type RegionalOption = {
-  id: number;
-  nome: string;
-};
 
 function normalizarPeriodicidade(p?: string | null): Periodicidade {
-  const v = (p ?? "diaria").to证明. toString().toLowerCase();
+  const v = (p ?? "diaria").toString().toLowerCase();
   if (v.includes("seman")) return "semanal";
   if (v.includes("mens")) return "mensal";
   return "diaria";
@@ -98,7 +96,7 @@ function addDaysISO(baseISO: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-// ✅ helper para normalizar relation: objeto ou array -> objeto
+// helper para normalizar relation: objeto ou array -> objeto
 function pickOne<T>(v: T | T[] | null | undefined): T | null {
   if (!v) return null;
   return Array.isArray(v) ? (v[0] ?? null) : v;
@@ -118,7 +116,7 @@ export default function N1ListarRotinas({ perfil }: Props) {
   // ---------------------------
   // BLOCO 6B (TOPO) - CRIAR ROTINA
   // ---------------------------
-  const [aba, setAba] = useState<"MODELO" | "AVULSA">("MODELO");
+  const [aba] = useState<"AVULSA">("AVULSA");
 
   const [carregandoModelos, setCarregandoModelos] = useState(false);
   const [erroModelos, setErroModelos] = useState<string | null>(null);
@@ -130,9 +128,7 @@ export default function N1ListarRotinas({ perfil }: Props) {
   const [responsaveis, setResponsaveis] = useState<Responsavel[]>([]);
   const [responsavelId, setResponsavelId] = useState<string>("");
 
-  const [carregandoRegionais, setCarregandoRegionais] = useState(false);
-  const [regionais, setRegionais] = useState<RegionalOption[]>([]);
-  const [regionalId, setRegionalId] = useState<number | null>(null); // null = Geral
+  // regional vem do responsavel selecionado; nao ha seletor manual
 
   // campos
   const [titulo, setTitulo] = useState("");
@@ -146,7 +142,7 @@ export default function N1ListarRotinas({ perfil }: Props) {
   const [dataInicio, setDataInicio] = useState<string>(todayISO());
   const [horarioInicio, setHorarioInicio] = useState<string>("08:00");
 
-  // AVULSA: editável
+  // AVULSA: editavel
   const [temChecklist, setTemChecklist] = useState(false);
   const [temAnexo, setTemAnexo] = useState(false);
 
@@ -168,8 +164,8 @@ export default function N1ListarRotinas({ perfil }: Props) {
     border: "none",
   };
 
-  const isModoModelo = aba === "MODELO";
-  const isModoAvulsa = aba === "AVULSA";
+  const isModoModelo = false;
+  const isModoAvulsa = true;
 
   const modeloSelecionado = useMemo(() => {
     if (!modeloId) return null;
@@ -181,12 +177,7 @@ export default function N1ListarRotinas({ perfil }: Props) {
     [responsaveis, responsavelId]
   );
 
-  const regionalSelecionada = useMemo(() => {
-    if (regionalId == null) return null;
-    return regionais.find((r) => r.id === regionalId) ?? null;
-  }, [regionais, regionalId]);
-
-  // ✅ flags efetivas
+  // flags efetivas
   const flagsEfetivas = useMemo(() => {
     if (isModoModelo) {
       return {
@@ -197,11 +188,11 @@ export default function N1ListarRotinas({ perfil }: Props) {
     return { temChecklist, temAnexo };
   }, [isModoModelo, modeloSelecionado, temChecklist, temAnexo]);
 
-  // ✅ travas iguais combinadas
+  // travas iguais combinadas
   const disabledTituloDescricao = isModoModelo; // MODELO trava
   const disabledPeriodicidade = isModoModelo; // MODELO trava
   const disabledChecklistAnexo = isModoModelo; // MODELO trava
-  const disabledDiaSemana = isModoAvulsa; // avulsa não aplica
+  const disabledDiaSemana = isModoAvulsa; // avulsa nao aplica
 
   // ---------------------------
   // carregar lista de rotinas
@@ -249,7 +240,7 @@ export default function N1ListarRotinas({ perfil }: Props) {
 
       if (error) throw error;
 
-      // ✅ NORMALIZA relations que podem vir como array
+      // NORMALIZA relations que podem vir como array
       const normalized: RotinaRow[] = (data ?? []).map((row: any) => ({
         ...row,
         responsavel: pickOne<RespObj>(row.responsavel),
@@ -268,7 +259,7 @@ export default function N1ListarRotinas({ perfil }: Props) {
   };
 
   // ---------------------------
-  // carregar responsáveis (N2/N3 do dept/setor)
+  // carregar responsaveis (N2/N3 do dept/setor)
   // ---------------------------
   const carregarResponsaveis = async () => {
     setCarregandoResp(true);
@@ -283,7 +274,7 @@ export default function N1ListarRotinas({ perfil }: Props) {
 
       const { data, error } = await supabase
         .from("usuarios")
-        .select("id,nome,nivel,departamento_id,setor_id,regional_id,ativo")
+        .select("id,nome,nivel,departamento_id,setor_id,regional_id,grupo_id,ativo")
         .eq("departamento_id", deptId)
         .eq("setor_id", setorId)
         .eq("ativo", true)
@@ -297,13 +288,26 @@ export default function N1ListarRotinas({ perfil }: Props) {
         id: String(u.id),
         nome: String(u.nome ?? "Sem nome"),
         nivel: String(u.nivel ?? ""),
+        regional_id: u.regional_id != null ? Number(u.regional_id) : null,
+        grupo_id: u.grupo_id != null ? Number(u.grupo_id) : null,
       }));
+      const selfId = String(perfil.id);
+      const selfNome = String(perfil.nome ?? "Eu");
+      if (!lista.some((u) => u.id === selfId)) {
+        lista.unshift({
+          id: selfId,
+          nome: selfNome,
+          nivel: perfil.nivel,
+          regional_id: perfil.regional_id ?? null,
+          grupo_id: perfil.grupo_id ?? null,
+        });
+      }
 
       setResponsaveis(lista);
       setResponsavelId((prev) => prev || (lista[0]?.id ?? ""));
     } catch (e: any) {
-      console.error("Erro ao carregar responsáveis N1:", e);
-      setErroResp(e.message ?? "Erro ao carregar responsáveis.");
+      console.error("Erro ao carregar responsaveis N1:", e);
+      setErroResp(e.message ?? "Erro ao carregar responsaveis.");
       setResponsaveis([]);
       setResponsavelId("");
     } finally {
@@ -312,45 +316,11 @@ export default function N1ListarRotinas({ perfil }: Props) {
   };
 
   // ---------------------------
-  // carregar regionais (do setor)
-  // ---------------------------
-  const carregarRegionais = async () => {
-    setCarregandoRegionais(true);
-
-    try {
-      if (!setorId) {
-        setRegionais([]);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("regionais")
-        .select("id,nome,setor_id")
-        .eq("setor_id", setorId)
-        .order("nome", { ascending: true });
-
-      if (error) throw error;
-
-      const regs: RegionalOption[] = (data ?? []).map((r: any) => ({
-        id: Number(r.id),
-        nome: String(r.nome ?? `Regional ${r.id}`),
-      }));
-
-      setRegionais(regs);
-    } catch (e) {
-      console.error("Erro ao carregar regionais:", e);
-      setRegionais([]);
-    } finally {
-      setCarregandoRegionais(false);
-    }
-  };
-
-  // ---------------------------
   // carregar modelos (rotinas_padrao do dept/setor)
   // ---------------------------
   const carregarModelos = async () => {
     setCarregandoModelos(true);
-   _plugin: setErroModelos(null);
+    setErroModelos(null);
 
     try {
       if (!deptId || !setorId) {
@@ -390,21 +360,18 @@ export default function N1ListarRotinas({ perfil }: Props) {
     void carregarRotinas();
     void carregarModelos();
     void carregarResponsaveis();
-    void carregarRegionais();
+    // regional vem do responsavel selecionado
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [perfil.id, deptId, setorId]);
 
   // ---------------------------
-  // trocar aba: reset mensagens e estado mínimo
+  // trocar aba: reset mensagens e estado minimo
   // ---------------------------
   useEffect(() => {
     setStatusMsg(null);
     setDetails(null);
-
-    if (aba === "AVULSA") {
-      setModeloId("");
-    }
-  }, [aba]);
+    setModeloId("");
+  }, []);
 
   // ---------------------------
   // aplicar modelo selecionado
@@ -425,7 +392,7 @@ export default function N1ListarRotinas({ perfil }: Props) {
 
     setUrgencia(normalizarUrgencia(m.urgencia));
 
-    // apenas exibição
+    // apenas exibicao
     setTemChecklist(!!m.tem_checklist);
     setTemAnexo(!!m.tem_anexo);
   };
@@ -440,32 +407,38 @@ export default function N1ListarRotinas({ perfil }: Props) {
     setDetails(null);
 
     if (!deptId || !setorId) {
-      setStatusMsg("❌ Seu usuário N1 não está amarrado em Departamento/Setor.");
+      setStatusMsg("Erro: Seu usuario N1 nao esta amarrado em Departamento/Setor.");
       return;
     }
 
     if (!responsavelId) {
-      setStatusMsg("❌ Selecione um responsável (N2/N3).");
+      setStatusMsg("Selecione um responsavel (N2/N3).");
+      return;
+    }
+
+    const grupoIdEfetivo = responsavelSelecionado?.grupo_id ?? (perfil as any)?.grupo_id ?? null;
+    if (!grupoIdEfetivo) {
+      setStatusMsg("Responsavel precisa estar vinculado a um grupo.");
       return;
     }
 
     if (isModoModelo && !modeloSelecionado) {
-      setStatusMsg("❌ Selecione um modelo do N1.");
+      setStatusMsg("Selecione um modelo do N1.");
       return;
     }
 
     const minutos = Number(duracaoMinutos);
     if (!Number.isFinite(minutos) || minutos < 0) {
-      setStatusMsg("❌ Duração inválida.");
+      setStatusMsg("Duracao invalida.");
       return;
     }
 
     if (!dataInicio) {
-      setStatusMsg("❌ Selecione a data de início.");
+      setStatusMsg("Selecione a data de inicio.");
       return;
     }
     if (!horarioInicio) {
-      setStatusMsg("❌ Selecione o horário.");
+      setStatusMsg("Selecione o horario.");
       return;
     }
 
@@ -473,6 +446,22 @@ export default function N1ListarRotinas({ perfil }: Props) {
     setStatusMsg("Criando rotina...");
 
     try {
+      const { data: grupoData, error: grupoError } = await supabase
+        .from("grupos")
+        .select("id,departamento_id,setor_id,regional_id,ativo")
+        .eq("id", grupoIdEfetivo)
+        .single();
+      if (grupoError) throw grupoError;
+      if (!grupoData || grupoData.ativo === false) {
+        setStatusMsg("Grupo inativo ou inexistente.");
+        return;
+      }
+      if (grupoData.departamento_id !== deptId || grupoData.setor_id !== setorId) {
+        setStatusMsg("Grupo nao pertence ao mesmo departamento/setor.");
+        return;
+      }
+      const regionalIdEfetivo = grupoData.regional_id ?? null;
+
       const tipo: TipoRotina = isModoAvulsa ? "avulsa" : "normal";
 
       const tituloEfetivo = isModoModelo ? (modeloSelecionado?.titulo ?? titulo) : titulo;
@@ -488,8 +477,8 @@ export default function N1ListarRotinas({ perfil }: Props) {
         titulo: (tituloEfetivo ?? "").trim(),
         descricao: (descricaoEfetiva ?? "").trim() || null,
 
-        duracao_minutos: minutos, // ✅ livre
-        urgencia: urgencia, // ✅ livre
+        duracao_minutos: minutos, // livre
+        urgencia: urgencia, // livre
 
         tipo,
         periodicidade: periodicidadeEfetiva,
@@ -509,10 +498,10 @@ export default function N1ListarRotinas({ perfil }: Props) {
 
         responsavel_id: responsavelId,
         criador_id: perfil.id,
-
+        grupo_id: grupoIdEfetivo,
         departamento_id: deptId,
         setor_id: setorId,
-        regional_id: regionalId, // ✅ pode ser null
+        regional_id: regionalIdEfetivo,
 
         rotina_padrao_id: isModoModelo ? modeloSelecionado!.id : null,
       };
@@ -520,7 +509,7 @@ export default function N1ListarRotinas({ perfil }: Props) {
       const { data, error } = await supabase.functions.invoke("eqf-create-rotina-diaria", { body });
       if (error) throw error;
 
-      setStatusMsg("✅ Rotina criada com sucesso!");
+      setStatusMsg("Rotina criada com sucesso!");
       setDetails(JSON.stringify(data ?? {}, null, 2));
 
       // reset leve
@@ -538,7 +527,7 @@ export default function N1ListarRotinas({ perfil }: Props) {
       await carregarRotinas();
     } catch (err: any) {
       console.error("Erro ao criar rotina (N1):", err);
-      setStatusMsg(`❌ Erro: ${err.message ?? String(err)}`);
+      setStatusMsg(`Erro: ${err.message ?? String(err)}`);
       setDetails(JSON.stringify(err, null, 2));
     } finally {
       setLoadingCriar(false);
@@ -546,7 +535,7 @@ export default function N1ListarRotinas({ perfil }: Props) {
   };
 
   // ---------------------------
-  // ordenação lista
+  // ordenacao lista
   // ---------------------------
   const rotinasOrdenadas = useMemo(() => {
     return [...rotinas].sort((a, b) => {
@@ -563,50 +552,152 @@ export default function N1ListarRotinas({ perfil }: Props) {
 
   return (
     <section style={{ display: "grid", gap: 12 }}>
-      {/* BLOCO 6B — CRIAR ROTINA (TOPO) */}
+      {/* BLOCO 6B - CRIAR ROTINA (TOPO) */}
       <div style={{ ...styles.card, textAlign: "left" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800, color: theme.colors.neonOrange ?? "#fb923c" }}>
-              Bloco 6B — Criar rotina (N1)
+              Bloco 6B - Criar rotina (N1)
             </div>
             <div style={{ marginTop: 4, fontSize: 12, color: theme.colors.textMuted ?? "#9ca3af" }}>
-              Este bloco chama a função <b>eqf-create-rotina-diaria</b>.
+              Este bloco chama a funcao <b>eqf-create-rotina-diaria</b>.
             </div>
           </div>
 
-          {/* ABAS */}
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <button
-              type="button"
-              onClick={() => setAba("MODELO")}
+            <div
               style={{
                 ...btnSecondary,
-                opacity: aba === "MODELO" ? 1 : 0.65,
-                borderColor: aba === "MODELO" ? theme.colors.neonGreen ?? "#22c55e" : theme.colors.borderSoft ?? "#334155",
-                color: aba === "MODELO" ? theme.colors.neonGreen ?? "#22c55e" : theme.colors.textSoft ?? "#e5e7eb",
-              }}
-            >
-              Criar por Modelo (N1)
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setAba("AVULSA")}
-              style={{
-                ...btnSecondary,
-                opacity: aba === "AVULSA" ? 1 : 0.65,
-                borderColor: aba === "AVULSA" ? theme.colors.neonGreen ?? "#22c55e" : theme.colors.borderSoft ?? "#334155",
-                color: aba === "AVULSA" ? theme.colors.neonGreen ?? "#22c55e" : theme.colors.textSoft ?? "#e5e7eb",
+                borderColor: theme.colors.neonGreen ?? "#22c55e",
+                color: theme.colors.neonGreen ?? "#22c55e",
+                cursor: "default",
               }}
             >
               Rotina Avulsa (1 dia)
-            </button>
+            </div>
           </div>
         </div>
 
-        {/* ... (resto do seu JSX permanece igual ao que você mandou) ... */}
-        {/* ✅ IMPORTANTE: não mexi no layout nem nos campos – só corrigi a tipagem/normalização */}
+        <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12, marginTop: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+            <div>
+              <label style={styles.label}>Responsavel</label>
+              <select
+                value={responsavelId}
+                onChange={(e) => setResponsavelId(e.target.value)}
+                style={styles.input}
+                disabled={carregandoResp}
+              >
+                <option value="">Selecione</option>
+                {responsaveis.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.nome} ({r.nivel})
+                  </option>
+                ))}
+              </select>
+              {erroResp && <div style={{ marginTop: 6, fontSize: 12, color: "#fecaca" }}>{erroResp}</div>}
+            </div>
+
+            <div>
+              <label style={styles.label}>Data de inicio</label>
+              <input
+                type="date"
+                value={dataInicio}
+                onChange={(e) => setDataInicio(e.target.value)}
+                style={styles.input}
+              />
+            </div>
+
+            <div>
+              <label style={styles.label}>Horario</label>
+              <input
+                type="time"
+                value={horarioInicio}
+                onChange={(e) => setHorarioInicio(e.target.value)}
+                style={styles.input}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label style={styles.label}>Titulo</label>
+            <input
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+              style={styles.input}
+              disabled={disabledTituloDescricao}
+            />
+          </div>
+
+          <div>
+            <label style={styles.label}>Descricao</label>
+            <textarea
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
+              style={styles.textarea}
+              disabled={disabledTituloDescricao}
+            />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+            <div>
+              <label style={styles.label}>Duracao (min)</label>
+              <input
+                type="number"
+                min={1}
+                value={duracaoMinutos}
+                onChange={(e) => setDuracaoMinutos(e.target.value)}
+                style={styles.input}
+              />
+            </div>
+            <div>
+              <label style={styles.label}>Urgencia</label>
+              <select value={urgencia} onChange={(e) => setUrgencia(e.target.value as Urgencia)} style={styles.input}>
+                <option value="baixa">Baixa</option>
+                <option value="media">Media</option>
+                <option value="alta">Alta</option>
+              </select>
+            </div>
+            <div>
+              <label style={styles.label}>Periodicidade</label>
+              <input value="Diaria (fixo)" disabled style={{ ...styles.input, color: "#9ca3af" }} />
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: theme.colors.textSoft }}>
+              <input
+                type="checkbox"
+                checked={flagsEfetivas.temChecklist}
+                onChange={(e) => setTemChecklist(e.target.checked)}
+                disabled={disabledChecklistAnexo}
+              />
+              Tem checklist
+            </label>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: theme.colors.textSoft }}>
+              <input
+                type="checkbox"
+                checked={flagsEfetivas.temAnexo}
+                onChange={(e) => setTemAnexo(e.target.checked)}
+                disabled={disabledChecklistAnexo}
+              />
+              Exige anexo
+            </label>
+          </div>
+
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <button type="submit" style={btnPrimary} disabled={loadingCriar}>
+              {loadingCriar ? "Salvando..." : "Salvar rotina"}
+            </button>
+            {statusMsg && <div style={{ fontSize: 12, color: theme.colors.textSoft }}>{statusMsg}</div>}
+          </div>
+
+          {details && (
+            <pre style={{ margin: 0, fontSize: 11, color: theme.colors.textMuted, whiteSpace: "pre-wrap" }}>
+              {details}
+            </pre>
+          )}
+        </form>
       </div>
 
       {/* LISTA */}
@@ -666,12 +757,12 @@ export default function N1ListarRotinas({ perfil }: Props) {
 
                   <div style={{ marginTop: 8, fontSize: 11, color: theme.colors.textMuted ?? "#9ca3af", lineHeight: 1.4 }}>
                     <div>
-                      <strong>Data:</strong> {dataLabel} • <strong>Horário:</strong> {horaLabel} • <strong>Duração:</strong> {duracao} min
+                      <strong>Data:</strong> {dataLabel} - <strong>Horario:</strong> {horaLabel} - <strong>Duracao:</strong> {duracao} min
                     </div>
                     <div>
-                      <strong>Regional:</strong> {r.regional_id == null ? "Geral" : reg?.nome ?? String(r.regional_id)} •{" "}
-                      <strong>Responsável:</strong>{" "}
-                      {resp?.nome ? `${resp.nome}${resp.nivel ? ` (${resp.nivel})` : ""}` : "—"}
+                      <strong>Regional:</strong> {r.regional_id == null ? "Geral" : reg?.nome ?? String(r.regional_id)} -{" "}
+                      <strong>Responsavel:</strong>{" "}
+                      {resp?.nome ? `${resp.nome}${resp.nivel ? ` (${resp.nivel})` : ""}` : "-"}
                     </div>
                   </div>
                 </div>

@@ -98,7 +98,7 @@ export function N1ExecucaoPorRegional({ perfil }: Props) {
       setErro(null);
 
       // 1) Rotinas – por enquanto SEM filtro de hierarquia
-      const { data: rotinasData, error: rotinasError } = await supabase
+      let rq = supabase
         .from("rotinas")
         .select(
           `
@@ -124,6 +124,10 @@ export function N1ExecucaoPorRegional({ perfil }: Props) {
           )
         `
         );
+      if (perfil.departamento_id) rq = rq.eq("departamento_id", perfil.departamento_id);
+      if (perfil.setor_id) rq = rq.eq("setor_id", perfil.setor_id);
+
+      const { data: rotinasData, error: rotinasError } = await rq;
 
       if (rotinasError) throw rotinasError;
 
@@ -181,7 +185,8 @@ export function N1ExecucaoPorRegional({ perfil }: Props) {
         execucoes: mapaExecucoes.get(r.id) ?? [],
       }));
 
-      setRotinas(mapeadas);
+      const filtradas = mapeadas.filter((r) => ["N2", "N3"].includes(r.responsavel_nivel));
+      setRotinas(filtradas);
     } catch (e: any) {
       console.error(e);
       setErro(e.message ?? "Erro ao carregar KPI.");

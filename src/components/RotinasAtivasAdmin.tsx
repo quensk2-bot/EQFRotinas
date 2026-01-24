@@ -1,4 +1,4 @@
-// Lista e administração de rotinas ativas (N1/N2): editar data fim, pausar, excluir
+// Lista e administracao de rotinas ativas (N1/N2): editar data fim, pausar, excluir
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import type { Usuario } from "../types";
@@ -73,7 +73,7 @@ export default function RotinasAtivasAdmin({ perfil }: Props) {
       .catch(() => {});
   }, [isN1]);
 
-  // usuários (N1/N2)
+  // usuarios (N1/N2)
   useEffect(() => {
     if (!isN1 && !isN2) return;
     let q = supabase.from("usuarios").select("id,nome,nivel,regional_id,departamento_id,setor_id,ativo").eq("ativo", true);
@@ -81,12 +81,12 @@ export default function RotinasAtivasAdmin({ perfil }: Props) {
     if (perfil.setor_id) q = q.eq("setor_id", perfil.setor_id);
     if (isN2 && perfil.regional_id) q = q.eq("regional_id", perfil.regional_id);
     if (isN1 && regionalFiltro !== "todas") q = q.eq("regional_id", regionalFiltro);
-    q = q.in("nivel", ["N1", "N2", "N3"] as any);
+    q = q.in("nivel", ["N2", "N3"] as any);
     q.then(({ data }) => {
       if (data) {
         const list = data.map((u: any) => ({
           id: String(u.id),
-          nome: String(u.nome ?? "Usuário"),
+          nome: String(u.nome ?? "Usuario"),
           nivel: String(u.nivel ?? ""),
           regional_id: u.regional_id ?? null,
         }));
@@ -128,8 +128,8 @@ export default function RotinasAtivasAdmin({ perfil }: Props) {
       // mostra somente rotinas criadas a partir de modelo (tem rotina_padrao_id)
       rotinas = rotinas.filter((r) => r.rotina_padrao_id != null);
 
-      // N2 não vê N1
-      if (isN2) {
+      // N1/N2 nao veem N1
+      if (isN1 || isN2) {
         const allow = new Set(
           usuarios.filter((u) => u.nivel === "N2" || u.nivel === "N3").map((u) => u.id)
         );
@@ -194,7 +194,7 @@ export default function RotinasAtivasAdmin({ perfil }: Props) {
   };
 
   const excluir = async (id: string) => {
-    const ok = window.confirm("Excluir esta rotina? Esta ação não pode ser desfeita.");
+    const ok = window.confirm("Excluir esta rotina? Esta acao nao pode ser desfeita.");
     if (!ok) return;
     await supabase.from("rotinas").delete().eq("id", id);
     await carregar();
@@ -222,7 +222,7 @@ export default function RotinasAtivasAdmin({ perfil }: Props) {
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <div style={{ fontSize: 18, fontWeight: 800, color: theme.colors.textSoft ?? "#e5e7eb" }}>Rotinas ativas</div>
         <div style={{ fontSize: 12, color: theme.colors.textMuted ?? "#9ca3af" }}>
-          N1 filtra por regional; N2 vê somente sua regional.
+          N1 filtra por regional; N2 ve somente sua regional.
         </div>
       </div>
 
@@ -279,7 +279,7 @@ export default function RotinasAtivasAdmin({ perfil }: Props) {
             onChange={(e) => setUsuarioFiltro(e.target.value as any)}
             style={{ ...baseStyles.input, fontSize: 12, padding: "4px 8px", minWidth: 180 }}
           >
-            <option value="todos">Todos usuários</option>
+            <option value="todos">Todos usuarios</option>
             {usuarios.map((u) => (
               <option key={u.id} value={u.id}>
                 {u.nome}
@@ -321,12 +321,12 @@ export default function RotinasAtivasAdmin({ perfil }: Props) {
             }}
           >
             <div>Rotina</div>
-            <div>Responsável</div>
+            <div>Responsavel</div>
             <div>Regional</div>
-            <div>Data início</div>
+            <div>Data inicio</div>
             <div>Data fim</div>
             <div>Status</div>
-            <div>Ações</div>
+            <div>Acoes</div>
           </div>
 
           {lista.length === 0 && <div style={{ padding: 10, fontSize: 12, color: theme.colors.textMuted ?? "#9ca3af" }}>Nenhuma rotina.</div>}
@@ -405,3 +405,5 @@ export default function RotinasAtivasAdmin({ perfil }: Props) {
     </div>
   );
 }
+
+

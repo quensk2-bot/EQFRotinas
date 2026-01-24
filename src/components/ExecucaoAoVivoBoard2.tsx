@@ -438,7 +438,12 @@ export function ExecucaoAoVivoBoard2({ perfil }: Props) {
           return;
         }
 
-        const execucoesReais = ((execData as any) ?? []) as ExecucaoRow[];
+        let execucoesReais = ((execData as any) ?? []) as ExecucaoRow[];
+        if (perfil.nivel === "N3") {
+          execucoesReais = execucoesReais.filter(
+            (e) => e.executor_id === perfil.id || e.rotina?.responsavel_id === perfil.id
+          );
+        }
 
         // rotinas que já tiveram execução hoje
         const execHojeIds = new Set<string>();
@@ -447,7 +452,7 @@ export function ExecucaoAoVivoBoard2({ perfil }: Props) {
         });
 
         // (2) Pendentes virtuais do dia
-        const { data: rotinasHojeData, error: rotErr } = await supabase
+        let rotinasQuery = supabase
           .from("rotinas")
           .select(
             `
@@ -471,7 +476,11 @@ export function ExecucaoAoVivoBoard2({ perfil }: Props) {
               nome
             )
           `
-          )
+          );
+        if (perfil.nivel === "N3") {
+          rotinasQuery = rotinasQuery.eq("responsavel_id", perfil.id);
+        }
+        const { data: rotinasHojeData, error: rotErr } = await rotinasQuery
           .or(
             [
               `and(tipo.eq.avulsa,data_inicio.eq.${hojeISO})`,
